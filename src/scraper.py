@@ -382,24 +382,226 @@ def scrape_material_docente(driver, course, output_dir=None):
         return []
 
 
-def scrape_novedades(driver, course):
+def scrape_novedades_page(driver, post_offset=0):
     """
-    Scrape PDF attachments from Novedades (announcements) section.
-    Only extracts PDF files, ignores announcement text.
+    Scrape PDF and ZIP attachments from a single page of Novedades posts.
+    Helper function for scrape_novedades() that handles one page at a time.
+
+    Args:
+        driver (WebDriver): Authenticated WebDriver instance
+        post_offset (int): Offset for post numbering (for sequential numbering across pages)
+
+    Returns:
+        tuple: (files_list, posts_processed_count)
+    """
+    page_files = []
+
+    try:
+        # Find all post elements on current page
+        posts = driver.find_elements(By.CSS_SELECTOR, 'div.post.objeto')
+
+        for idx, post in enumerate(posts):
+            try:
+                # Extract post title (try multiple selectors)
+                post_title = None
+                try:
+                    # Try finding title in h1, h2, or h3 elements
+                    title_elem = post.find_element(By.CSS_SELECTOR, 'h1, h2, h3')
+                    post_title = title_elem.text.strip()
+                except NoSuchElementException:
+                    # Fallback: try to get from any text content
+                    try:
+                        # Look for a link or strong text that might be the title
+                        title_elem = post.find_element(By.CSS_SELECTOR, 'strong, b, a')
+                        post_title = title_elem.text.strip()
+                    except:
+                        # Last resort: use a generic name
+                        post_title = f'Post_{post_offset + idx + 1}'
+
+                # Sanitize post title for use as folder name
+                post_folder = sanitize_filename(post_title) if post_title else f'Post_{post_offset + idx + 1}'
+
+                # Find all download links in the post
+                download_links = post.find_elements(By.CSS_SELECTOR, 'a[href]')
+
+                pdf_links = []
+                zip_links = []
+
+                for link in download_links:
+                    href = link.get_attribute('href')
+                    if not href:
+                        continue
+
+                    # Check if link is for PDF or ZIP
+                    if '.pdf' in href.lower() or 'pdf' in href.lower():
+                        pdf_links.append(link)
+                    elif '.zip' in href.lower() or 'zip' in href.lower():
+                        zip_links.append(link)
+
+                # Process PDF files
+                for pdf_link in pdf_links:
+                    try:
+                        href = pdf_link.get_attribute('href')
+                        # Try to get filename from link text or use generic name
+                        link_text = pdf_link.text.strip()
+                        filename = link_text if link_text else 'document.pdf'
+
+                        # Ensure filename has .pdf extension
+                        if not filename.lower().endswith('.pdf'):
+                            filename += '.pdf'
+
+                        page_files.append({
+                            'name': filename,
+                            'url': href,
+                            'category': 'Cátedras',
+                            'subfolder': post_folder,
+                            'size': 'unknown'
+                        })
+                        print(f'      📄 Found PDF: {filename} in {post_folder}')
+
+                    except Exception as e:
+                        print(f'      ⚠️  Error processing PDF link: {e}')
+                        continue
+
+                # Process ZIP files
+                for zip_link in zip_links:
+                    try:
+                        href = zip_link.get_attribute('href')
+                        # Try to get filename from link text or use generic name
+                        link_text = zip_link.text.strip()
+                        filename = link_text if link_text else 'archive.zip'
+
+                        # Ensure filename has .zip extension
+                        if not filename.lower().endswith('.zip'):
+                            filename += '.zip'
+
+                        page_files.append({
+                            'name': filename,
+                            'url': href,
+                            'category': 'Cátedras',
+                            'subfolder': post_folder,
+                            'size': 'unknown'
+                        })
+                        print(f'      📦 Found ZIP: {filename} in {post_folder}')
+
+                    except Exception as e:
+                        print(f'      ⚠️  Error processing ZIP link: {e}')
+                        continue
+
+            except Exception as e:
+                print(f'      ⚠️  Error processing post {post_offset + idx + 1}: {e}')
+                continue
+
+        return page_files, len(posts)
+
+    except Exception as e:
+        print(f'      ⚠️  Error scraping page: {e}')
+        return page_files, 0
+
+
+def scrape_novedades(driver, course, output_dir=None):
+    """
+    Scrape PDF and ZIP attachments from Novedades (announcements) section.
+    Creates folder structure: Course/Cátedras/<post_name>/[files]
+    Both PDF and ZIP files from the same post go in the same folder.
+    Supports pagination - scrapes all pages automatically.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         course (dict): Course dictionary
+        output_dir (str, optional): Output directory for folder creation
 
     Returns:
-        list: List of PDF file dictionaries with 'name', 'url', 'category'
+        list: List of file dictionaries with 'name', 'url', 'category', 'subfolder'
     """
-    print(f'   📰 Scraping Novedades (PDFs only) for {course["code"]}...')
+    print(f'   📰 Scraping Novedades (PDFs and ZIPs) for {course["code"]}...')
 
-    # TODO: Implement novedades PDF scraping
-    # Extract only PDF attachments from announcements, ignore text content
+    all_files = []
+    sections = []
+    post_offset = 0
 
-    return []
+    try:
+        # Get base URL for novedades section
+        base_url = driver.current_url.split('?')[0]  # Remove any existing query params
+
+        # Detect pagination by looking for ul.paginas
+        try:
+            pagination = driver.find_elements(By.CSS_SELECTOR, 'ul.paginas li a[href*="?p="]')
+            page_numbers = []
+
+            for page_link in pagination:
+                href = page_link.get_attribute('href')
+                if '?p=' in href:
+                    # Extract page number from URL
+                    try:
+                        page_num = int(href.split('?p=')[-1].split('&')[0])
+                        if page_num not in page_numbers:
+                            page_numbers.append(page_num)
+                    except (ValueError, IndexError):
+                        continue
+
+            # Add page 0 if not in list (we're already on it)
+            if page_numbers and 0 not in page_numbers:
+                page_numbers.insert(0, 0)
+
+            # Sort page numbers
+            page_numbers.sort()
+
+            if page_numbers:
+                print(f'   📄 Found {len(page_numbers)} page(s) of novedades')
+            else:
+                # No pagination found, just one page
+                page_numbers = [0]
+
+        except Exception as e:
+            # No pagination or error detecting it - assume single page
+            print(f'   📄 Single page of novedades (no pagination detected)')
+            page_numbers = [0]
+
+        # Scrape each page
+        for page_idx, page_num in enumerate(page_numbers):
+            try:
+                # Navigate to the page (unless it's page 0 and we're on first iteration)
+                if page_idx > 0 or page_num > 0:
+                    page_url = f"{base_url}?p={page_num}"
+                    print(f'   📖 Scraping page {page_num + 1}/{len(page_numbers)}...')
+                    driver.get(page_url)
+                    time.sleep(1)  # Wait for page to load
+                else:
+                    print(f'   📖 Scraping page 1/{len(page_numbers)}...')
+
+                # Scrape posts from current page
+                page_files, posts_count = scrape_novedades_page(driver, post_offset)
+                all_files.extend(page_files)
+                post_offset += posts_count
+
+                if posts_count > 0:
+                    print(f'      ✅ Found {len(page_files)} file(s) from {posts_count} post(s) on page {page_num + 1}')
+                else:
+                    print(f'      ℹ️  No posts found on page {page_num + 1}')
+
+            except Exception as e:
+                print(f'      ⚠️  Error scraping page {page_num + 1}: {e}')
+                continue
+
+        # Ensure folders are created if output_dir provided
+        if output_dir and all_files:
+            # Create the main "Cátedras" folder
+            if "Cátedras" not in sections:
+                sections.append("Cátedras")
+                stats = ensure_folders_exist(course, sections, output_dir)
+
+        print(f'   ✅ Found {len(all_files)} file(s) total in Novedades across all pages')
+        return all_files
+
+    except NoSuchElementException:
+        print(f'   ℹ️  No posts found in Novedades section')
+        return []
+    except Exception as e:
+        print(f'   ❌ Error scraping Novedades: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 def scrape_tareas(driver, course):
@@ -463,7 +665,7 @@ def scrape_course_sections(driver, course, sections=None, output_dir=None):
             elif section_name == 'material_docente':
                 results['material_docente'] = scrape_material_docente(driver, course, output_dir)
             elif section_name == 'novedades':
-                results['novedades'] = scrape_novedades(driver, course)
+                results['novedades'] = scrape_novedades(driver, course, output_dir)
             elif section_name == 'tareas':
                 results['tareas'] = scrape_tareas(driver, course)
 
@@ -474,40 +676,44 @@ def scrape_course_sections(driver, course, sections=None, output_dir=None):
     return results
 
 
-def get_course_files(driver, course, output_dir=None):
+def get_course_files(driver, course, sections=None, output_dir=None):
     """
     Get list of files for a specific course by scraping multiple sections.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         course (dict): Course dictionary with course information
+        sections (list, optional): List of sections to scrape. Defaults to all file sections.
         output_dir (str, optional): Output directory for folder creation
 
     Returns:
         list: List of file dictionaries with 'name', 'url', 'category'
     """
+    # Default to all file sections (exclude calendario as it doesn't have files)
+    if sections is None:
+        sections = ['material_docente', 'novedades', 'tareas']
+
     print(f'🔍 Scraping sections for {course["name"]} ({course["code"]})')
 
-    # Scrape all relevant sections
-    section_data = scrape_course_sections(driver, course, output_dir=output_dir)
+    # Scrape specified sections
+    section_data = scrape_course_sections(driver, course, sections=sections, output_dir=output_dir)
 
     # Combine files from all sections
     all_files = []
 
     # Add files from Material Docente (teaching materials)
-    # NOTE: material_docente currently only creates folder structure, returns empty list
-    if section_data['material_docente']:
+    if 'material_docente' in section_data and section_data['material_docente']:
         all_files.extend(section_data['material_docente'])
 
     # Add PDFs from Novedades (announcement attachments)
-    if section_data['novedades']:
+    if 'novedades' in section_data and section_data['novedades']:
         all_files.extend(section_data['novedades'])
 
     # Add files from Tareas (assignment attachments)
-    if section_data['tareas']:
+    if 'tareas' in section_data and section_data['tareas']:
         all_files.extend(section_data['tareas'])
 
-    print(f'   ✅ Found {len(all_files)} file(s) across all sections')
+    print(f'   ✅ Found {len(all_files)} file(s) across selected sections')
 
     return all_files
 
@@ -597,13 +803,14 @@ def download_file(driver, file_info, output_path, download_dir):
         return False
 
 
-def download_files(driver, output_dir, course_filter=None):
+def download_files(driver, output_dir, sections=None, course_filter=None):
     """
-    Download all files from U-Cursos, organized by Course/Category/files.pdf.
+    Download files from U-Cursos, organized by Course/Category/files.pdf.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         output_dir (str): Base directory for downloads
+        sections (list, optional): List of sections to scrape. Defaults to all file sections.
         course_filter (str, optional): Only download files from this course
 
     Returns:
@@ -655,7 +862,7 @@ def download_files(driver, output_dir, course_filter=None):
             print(f'📖 Processing course: {course["name"]} ({course["code"]})')
 
             # Get files for this course (will create folders)
-            files = get_course_files(driver, course, output_dir=output_dir)
+            files = get_course_files(driver, course, sections=sections, output_dir=output_dir)
             stats['total_files'] += len(files)
 
             if not files:
@@ -674,11 +881,18 @@ def download_files(driver, output_dir, course_filter=None):
                     # Get smart course folder name
                     course_folder_name = get_course_folder_name(course, output_dir)
 
-                    # Organize: output_dir/Course/Category/file.pdf
+                    # Organize files by category and optional subfolder
                     category = sanitize_filename(file_info.get('category', 'Otros'))
                     filename = sanitize_filename(file_info['name'])
 
-                    file_path = output_path / course_folder_name / category / filename
+                    # Check if file has a subfolder (for nested organization like Novedades)
+                    if 'subfolder' in file_info and file_info['subfolder']:
+                        # Structure: output_dir/Course/Category/Subfolder/file.pdf
+                        subfolder = sanitize_filename(file_info['subfolder'])
+                        file_path = output_path / course_folder_name / category / subfolder / filename
+                    else:
+                        # Structure: output_dir/Course/Category/file.pdf
+                        file_path = output_path / course_folder_name / category / filename
 
                     # Check if file already exists
                     if file_path.exists():

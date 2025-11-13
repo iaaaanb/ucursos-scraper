@@ -5,9 +5,14 @@ A Python CLI tool to scrape and organize content from the U-Cursos university po
 ## Features
 
 - **Authenticate** to U-Cursos with username/password using Selenium
-- **Download PDF files** organized as `Course/Category/files.pdf`
-- **Export calendar** with assignments, exams, and lectures to ICS format
-- **CLI interface** with multiple commands for different operations
+- **Download files** organized by course and category:
+  - Material Docente (teaching materials)
+  - Novedades (announcements with pagination support)
+  - Tareas (assignments - coming soon)
+- **Export calendar** with Control events to ICS format
+- **Selective scraping** with section-specific flags (-c, -m, -n, -t)
+- **Smart folder naming** with course abbreviations
+- **Nested folder structure** for announcements (PDF/ZIP files)
 - **Environment-based configuration** for secure credential management
 
 ## Project Structure
@@ -82,93 +87,92 @@ All commands are run from the `src/` directory:
 
 ```bash
 cd src
-python main.py [COMMAND] [OPTIONS]
+python main.py [OPTIONS]
 ```
 
 Or make it executable:
 
 ```bash
 chmod +x src/main.py
-./src/main.py [COMMAND] [OPTIONS]
+./src/main.py [OPTIONS]
 ```
 
-### Available Commands
+### Section Flags
 
-#### 1. Full Sync (Download + Calendar)
+By default, the scraper downloads all sections. Use flags to selectively scrape specific sections:
 
-Performs both file download and calendar export:
+- `-c, --calendario`: Scrape calendario section and export ICS file
+- `-m, --material`: Scrape material docente files
+- `-n, --novedades`: Scrape novedades (announcements) files
+- `-t, --tareas`: Scrape tareas (assignments) files
 
-```bash
-python main.py sync
-```
+**Flags can be combined!** For example, `-mt` scrapes both material docente and tareas.
 
-Options:
+### Common Options
+
 - `--headless/--no-headless`: Run browser in headless mode (default: headless)
-- `--output`, `-o`: Download directory path (default: `./downloads`)
+- `--output`, `-o`: Output directory path (default: `./downloads`)
+- `--course`: Scrape only a specific course (filters by course name)
 
-Example:
+### Examples
+
+#### Full Sync (All Sections)
+Download all files and export calendar:
 ```bash
-python main.py sync --no-headless --output ./my-files
+python main.py
 ```
 
-#### 2. Download Files Only
-
-Download PDF files organized by course and category:
-
+#### Selective Section Scraping
 ```bash
-python main.py download
+# Only material docente
+python main.py -m
+
+# Material docente + tareas
+python main.py -mt
+
+# Novedades only
+python main.py -n
+
+# Calendar only
+python main.py -c
 ```
 
-Options:
-- `--headless/--no-headless`: Run browser in headless mode
-- `--output`, `-o`: Download directory path
-- `--course`, `-c`: Download files for specific course only
-
-Examples:
+#### With Course Filter
 ```bash
-# Download all files
-python main.py download
+# All sections for a specific course
+python main.py --course "Programación"
 
-# Download files for a specific course
-python main.py download --course "Programación"
+# Only calendar for a specific course
+python main.py -c --course "Programación"
 
-# Download with custom output directory
-python main.py download --output ~/Documents/UCursos
+# Material docente + novedades for specific course
+python main.py -mn --course "Cálculo"
 ```
 
-#### 3. Export Calendar Only
-
-Export assignments, exams, and lectures to ICS format:
-
+#### Custom Output Directory
 ```bash
-python main.py calendar
+# All sections to custom directory
+python main.py --output ~/Documents/UCursos
+
+# Only novedades to custom directory
+python main.py -n --output ./my-files
 ```
 
-Options:
-- `--headless/--no-headless`: Run browser in headless mode
-- `--output`, `-o`: Output ICS file path (default: `./calendar.ics`)
-- `--types`, `-t`: Event types to export (can specify multiple)
-
-Examples:
+#### Visible Browser (Non-Headless)
 ```bash
-# Export all event types
-python main.py calendar
+# Run with visible browser
+python main.py --no-headless
 
-# Export only assignments and exams
-python main.py calendar --types assignments --types exams
-
-# Custom output file
-python main.py calendar --output ~/Documents/ucursos-calendar.ics
+# Debug specific section
+python main.py -n --no-headless
 ```
 
 ### Help
 
-Get help for any command:
+Get detailed help:
 
 ```bash
 python main.py --help
-python main.py download --help
-python main.py calendar --help
 ```
 
 ## File Organization
@@ -178,33 +182,44 @@ Downloaded files are automatically organized in the following structure:
 ```
 downloads/
 ├── Course Name 1/
-│   ├── Lectures/
-│   │   ├── Lecture_01.pdf
-│   │   └── Lecture_02.pdf
-│   ├── Assignments/
-│   │   └── Assignment_01.pdf
-│   └── Exams/
-│       └── Midterm_Study_Guide.pdf
+│   ├── Material Docente/
+│   │   ├── Category 1/
+│   │   │   ├── Lecture_01.pdf
+│   │   │   └── Lecture_02.pdf
+│   │   └── Category 2/
+│   │       └── Assignment_01.pdf
+│   ├── Cátedras/
+│   │   ├── Post_Title_1/
+│   │   │   ├── document.pdf
+│   │   │   └── archive.zip
+│   │   └── Post_Title_2/
+│   │       └── presentation.pdf
+│   └── Tareas/
+│       └── (coming soon)
 └── Course Name 2/
     └── ...
 ```
 
+**Note:** The scraper uses smart folder naming with course abbreviations when available (configured in `config.py`).
+
+## ✅ Implemented Features
+
+### Novedades Section - PDF/ZIP Downloads (Completed)
+
+The Novedades (announcements) section scraper is fully implemented with:
+
+- ✅ Automatic pagination support - scrapes all pages
+- ✅ PDF and ZIP file detection and download
+- ✅ Nested folder structure: `downloads/<course>/Cátedras/<post_title>/[files]`
+- ✅ Both PDF and ZIP files from the same post saved to the same folder
+- ✅ Smart post title extraction with fallback handling
+- ✅ Robust error handling for malformed posts
+
+**Implementation**: `src/scraper.py:scrape_novedades()` and `scrape_novedades_page()`
+
 ## 🚧 Pending Implementation
 
 The following features are planned but not yet implemented:
-
-### Novedades Section - PDF/ZIP Downloads
-
-The Novedades (announcements) section contains posts with downloadable attachments that need to be scraped:
-
-- Posts are in divs with class `post objeto`
-- Each post may contain:
-  - An `<a>` tag with PDF download link
-  - An `<a>` tag with ZIP download link (if PDF exists)
-- **Desired structure**: `downloads/<course>/Cátedras/<pdf_name>/`
-- Both PDF and ZIP files should be saved in the same folder
-
-**Implementation location**: `src/scraper.py:scrape_novedades()` (lines 385-402)
 
 ### Tareas Section - Enhanced Scraping
 
@@ -220,7 +235,7 @@ Currently only basic scraping is implemented. The following enhancements are nee
 - **File downloads**: Download attached files from the "descripción" (description) section
 - **Desired structure**: `downloads/<course>/<tarea_name>/` for each assignment's files
 
-**Implementation location**: `src/scraper.py:scrape_tareas()` (lines 405-424)
+**Implementation location**: `src/scraper.py:scrape_tareas()`
 
 ## Calendar Import
 
@@ -233,32 +248,33 @@ The generated `.ics` file can be imported into:
 
 ## Development
 
-### TODO: Implementation Steps
+### Current Implementation Status
 
-The following functions need to be implemented with actual U-Cursos selectors:
+✅ **Completed:**
+- Authentication system with U-Cursos login
+- Course discovery and listing (Primavera 2025 section)
+- Material Docente scraping with category support
+- Novedades scraping with pagination and nested folders
+- Calendar export (Control events to ICS format)
+- File download system with smart folder naming
+- Selective section scraping with CLI flags
 
-1. **Authentication** (`src/auth.py`):
-   - Inspect U-Cursos login page
-   - Implement username/password field selectors
-   - Add login button click logic
-   - Verify successful authentication
-
-2. **Course Discovery** (`src/scraper.py`):
-   - Implement `get_courses()` to scrape enrolled courses
-   - Implement `get_course_files()` to find downloadable files
-   - Implement `download_file()` to download files
-
-3. **Calendar Scraping** (`src/calendar_export.py`):
-   - Implement `get_assignments()` to scrape assignment deadlines
-   - Implement `get_exams()` to scrape exam schedules
-   - Implement `get_lectures()` to scrape lecture times
+🚧 **In Progress:**
+- Tareas (assignments) enhanced scraping
 
 ### Running in Development Mode
 
 To see browser actions (non-headless):
 
 ```bash
-python main.py download --no-headless
+python main.py --no-headless
+```
+
+To debug a specific section:
+
+```bash
+python main.py -n --no-headless  # Debug novedades only
+python main.py -m --no-headless  # Debug material docente only
 ```
 
 ### Testing

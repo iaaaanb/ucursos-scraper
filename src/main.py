@@ -18,15 +18,38 @@ from config import DOWNLOAD_DIR
 load_dotenv()
 
 
-@click.group()
+@click.command()
 @click.version_option(version='0.1.0')
-def cli():
+@click.option('--headless/--no-headless', default=True, help='Run browser in headless mode')
+@click.option('--output', '-o', default=f'./{DOWNLOAD_DIR}', help='Output directory path')
+@click.option('--course', help='Scrape only this specific course')
+@click.option('-c', '--calendario', 'sections', flag_value='calendario', multiple=True, help='Scrape calendario section only')
+@click.option('-m', '--material', 'sections', flag_value='material_docente', multiple=True, help='Scrape material docente section only')
+@click.option('-n', '--novedades', 'sections', flag_value='novedades', multiple=True, help='Scrape novedades section only')
+@click.option('-t', '--tareas', 'sections', flag_value='tareas', multiple=True, help='Scrape tareas section only')
+def cli(headless, output, course, sections):
     """
     U-Cursos Scraper - Download files and export calendar events from U-Cursos.
+
+    By default (no flags), scrapes all sections: calendario, material docente, novedades, and tareas.
+
+    Use section flags to scrape specific sections only:
+    - -c, --calendario: Scrape calendario and export ICS file
+    - -m, --material: Scrape material docente files
+    - -n, --novedades: Scrape novedades (announcements) files
+    - -t, --tareas: Scrape tareas (assignments) files
+
+    Flags can be combined (e.g., -mt scrapes material docente and tareas only).
 
     Before running, create a .env file with your credentials:
     - UCURSOS_USERNAME
     - UCURSOS_PASSWORD
+
+    Examples:
+        python main.py              # Scrape all sections
+        python main.py -m           # Only material docente
+        python main.py -mt          # Material docente + tareas
+        python main.py -c --course "Programación"  # Only calendario for one course
     """
     # Validate environment variables
     if not os.getenv('UCURSOS_USERNAME') or not os.getenv('UCURSOS_PASSWORD'):
@@ -34,18 +57,26 @@ def cli():
             '⚠️  Warning: UCURSOS_USERNAME and UCURSOS_PASSWORD not set in .env file',
             fg='yellow'
         ))
+        sys.exit(1)
 
+    # Determine which sections to scrape
+    sections_list = list(sections) if sections else ['calendario', 'material_docente', 'novedades', 'tareas']
 
-@cli.command()
-@click.option('--headless/--no-headless', default=True, help='Run browser in headless mode')
-@click.option('--output', '-o', default=f'./{DOWNLOAD_DIR}', help='Download directory path')
-def sync(headless, output):
-    """
-    Sync all content: download files and export calendar.
+    # Display what we're scraping
+    if sections:
+        section_names = {
+            'calendario': '📅 Calendario',
+            'material_docente': '📚 Material Docente',
+            'novedades': '📰 Novedades',
+            'tareas': '📝 Tareas'
+        }
+        enabled = [section_names.get(s, s) for s in sections_list]
+        click.echo(click.style(f'🔄 Scraping sections: {", ".join(enabled)}', fg='cyan', bold=True))
+    else:
+        click.echo(click.style('🔄 Scraping all sections (full sync)...', fg='cyan', bold=True))
 
-    This command performs both download and calendar export operations.
-    """
-    click.echo(click.style('🔄 Starting full sync...', fg='cyan', bold=True))
+    if course:
+        click.echo(click.style(f'📖 Course filter: {course}', fg='cyan'))
 
     # Create output directory
     Path(output).mkdir(parents=True, exist_ok=True)
@@ -64,105 +95,35 @@ def sync(headless, output):
         click.echo('📚 Fetching courses...')
         courses = get_courses(driver)
 
-        # Download files
-        click.echo('📥 Downloading files...')
-        download_files(driver, output)
-
-        # Export calendar
-        if courses:
-            click.echo('📅 Exporting calendar...')
-            calendar_path = Path(output) / 'calendar.ics'
-            export_calendar(driver, courses, str(calendar_path))
-
-        click.echo(click.style('✅ Sync completed successfully!', fg='green', bold=True))
-
-    except Exception as e:
-        click.echo(click.style(f'❌ Error: {str(e)}', fg='red'))
-        sys.exit(1)
-    finally:
-        if 'driver' in locals():
-            driver.quit()
-
-
-@cli.command()
-@click.option('--headless/--no-headless', default=True, help='Run browser in headless mode')
-@click.option('--output', '-o', default=f'./{DOWNLOAD_DIR}', help='Download directory path')
-@click.option('--course', '-c', help='Download files for specific course only')
-def download(headless, output, course):
-    """
-    Download PDF files organized by Course/Category/files.pdf.
-
-    Files are automatically organized into a clean directory structure.
-    """
-    click.echo(click.style('📥 Starting file download...', fg='cyan', bold=True))
-
-    # Create output directory
-    Path(output).mkdir(parents=True, exist_ok=True)
-
-    # Import here to avoid circular imports
-    from auth import authenticate
-    from scraper import download_files
-
-    try:
-        # Authenticate
-        click.echo('📝 Authenticating to U-Cursos...')
-        driver = authenticate(headless=headless)
-
-        # Download files
-        if course:
-            click.echo(f'📥 Downloading files for course: {course}...')
-        else:
-            click.echo('📥 Downloading all files...')
-
-        download_files(driver, output, course_filter=course)
-
-        click.echo(click.style('✅ Download completed successfully!', fg='green', bold=True))
-
-    except Exception as e:
-        click.echo(click.style(f'❌ Error: {str(e)}', fg='red'))
-        sys.exit(1)
-    finally:
-        if 'driver' in locals():
-            driver.quit()
-
-
-@cli.command()
-@click.option('--headless/--no-headless', default=True, help='Run browser in headless mode')
-@click.option('--output', '-o', default='./calendar.ics', help='Output ICS file path')
-def calendar(headless, output):
-    """
-    Export Control events (exams/tests) to ICS calendar file.
-
-    The generated file can be imported into Google Calendar, Outlook, etc.
-    """
-    click.echo(click.style('📅 Starting calendar export...', fg='cyan', bold=True))
-
-    # Import here to avoid circular imports
-    from auth import authenticate
-    from scraper import get_courses
-    from calendar_export import export_calendar
-
-    try:
-        # Authenticate
-        click.echo('📝 Authenticating to U-Cursos...')
-        driver = authenticate(headless=headless)
-
-        # Get courses
-        click.echo('📚 Fetching courses...')
-        courses = get_courses(driver)
-
         if not courses:
             click.echo(click.style('⚠️  No courses found', fg='yellow'))
             return
 
-        # Export calendar
-        click.echo('📅 Exporting Control events...')
-        export_calendar(driver, courses, output)
+        # Filter courses if specified
+        if course:
+            courses = [c for c in courses if course.lower() in c['name'].lower()]
+            if not courses:
+                click.echo(click.style(f'⚠️  No courses found matching: {course}', fg='yellow'))
+                return
 
-        click.echo(click.style(f'✅ Calendar exported to: {output}', fg='green', bold=True))
+        # Download files from selected sections
+        file_sections = [s for s in sections_list if s != 'calendario']
+        if file_sections:
+            click.echo('📥 Downloading files...')
+            download_files(driver, output, sections=file_sections, course_filter=course)
+
+        # Export calendar if calendario section is selected
+        if 'calendario' in sections_list:
+            click.echo('📅 Exporting calendar...')
+            calendar_path = Path(output) / 'calendar.ics'
+            export_calendar(driver, courses, str(calendar_path))
+
+        click.echo(click.style('✅ Scraping completed successfully!', fg='green', bold=True))
 
     except Exception as e:
         click.echo(click.style(f'❌ Error: {str(e)}', fg='red'))
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
     finally:
         if 'driver' in locals():
