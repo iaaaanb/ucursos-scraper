@@ -95,7 +95,7 @@ def ensure_folders_exist(course, sections, output_dir):
         output_dir (str or Path): Base output directory
 
     Returns:
-        Path: Path to course folder
+        dict: {'course_folder': Path, 'created': int, 'existing': int}
     """
     # Defensive coding: validate inputs
     if not isinstance(course, dict):
@@ -114,13 +114,26 @@ def ensure_folders_exist(course, sections, output_dir):
     if not course_folder.exists():
         course_folder.mkdir(parents=True, exist_ok=True)
 
+    # Track statistics
+    created_count = 0
+    existing_count = 0
+
     # Create section subfolders
     for section in sections:
         section_folder = course_folder / sanitize_filename(section)
-        if not section_folder.exists():
+        if section_folder.exists():
+            print(f'      📂 Found existing section: {section}')
+            existing_count += 1
+        else:
             section_folder.mkdir(parents=True, exist_ok=True)
+            print(f'      ✅ Created section: {section}')
+            created_count += 1
 
-    return course_folder
+    return {
+        'course_folder': course_folder,
+        'created': created_count,
+        'existing': existing_count
+    }
 
 
 def get_courses(driver):
@@ -293,10 +306,17 @@ def scrape_material_docente(driver, course, output_dir=None):
 
         # Create folders if output_dir provided
         if output_dir and sections:
-            ensure_folders_exist(course, sections, output_dir)
+            stats = ensure_folders_exist(course, sections, output_dir)
 
-        if sections:
-            print(f'   ✅ Created {len(sections)} section folder(s)')
+            # Print summary
+            if stats['created'] > 0 and stats['existing'] > 0:
+                print(f'   ✅ Created {stats["created"]} new section folder(s), found {stats["existing"]} existing')
+            elif stats['created'] > 0:
+                print(f'   ✅ Created {stats["created"]} new section folder(s)')
+            elif stats['existing'] > 0:
+                print(f'   📂 Found {stats["existing"]} existing section folder(s)')
+        elif sections:
+            print(f'   📑 Found {len(sections)} section(s) (no output directory specified)')
 
         # TODO: Implement actual file scraping from Material Docente
         # For now, return empty list since we're only creating folder structure
