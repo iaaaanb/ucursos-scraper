@@ -9,6 +9,7 @@ import time
 import shutil
 import glob
 from pathlib import Path
+from datetime import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -630,24 +631,132 @@ def scrape_novedades(driver, course, output_dir=None):
 
 def scrape_tareas(driver, course):
     """
-    Scrape attached files from Tareas (assignments) section.
-    Only extracts attached files (PDFs, ZIPs, etc.), ignores deadlines.
-    Note: Assignment deadlines are scraped from Calendario instead.
+    Scrape assignment deadlines from Tareas (assignments) section.
+    Extracts deadline information for calendar event creation.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         course (dict): Course dictionary
 
     Returns:
-        list: List of file dictionaries with 'name', 'url', 'category'
+        list: List of event dictionaries with deadline information
     """
-    print(f'   📝 Scraping Tareas (files only) for {course["code"]}...')
+    print(f'   📝 Scraping Tareas deadlines for {course["code"]}...')
 
-    # TODO: Implement tareas file scraping
-    # Extract only attached files (PDFs, ZIPs, etc.)
-    # Ignore assignment deadlines (handled by Calendario)
+    events = []
 
-    return []
+    try:
+        # Find the tareas table
+        table = driver.find_element(By.CSS_SELECTOR, 'table')
+
+        # Find all tbody elements
+        tbody_elements = table.find_elements(By.TAG_NAME, 'tbody')
+
+        current_category = None
+
+        for tbody in tbody_elements:
+            # Check if this tbody contains a separator row
+            separator_rows = tbody.find_elements(By.CSS_SELECTOR, 'tr.separador[data-categoria]')
+
+            if separator_rows:
+                # This is a separator - update current category
+                separator = separator_rows[0]
+                category_name = separator.get_attribute('data-categoria')
+
+                if not category_name or category_name.strip() == "":
+                    category_name = "Tareas"
+
+                current_category = category_name
+                continue
+
+            # This tbody contains tarea rows - extract deadline info
+            tarea_rows = tbody.find_elements(By.CSS_SELECTOR, 'tr')
+
+            for row in tarea_rows:
+                try:
+                    # Extract title from h1 > a
+                    title_elem = row.find_element(By.CSS_SELECTOR, 'td.string h1 a')
+                    title = title_elem.text.strip()
+                    url = title_elem.get_attribute('href')
+
+                    # Extract deadline timestamps from h2
+                    h2_elem = row.find_element(By.CSS_SELECTOR, 'td.string h2')
+
+                    # Find all timestamp elements
+                    time_spans = h2_elem.find_elements(By.CSS_SELECTOR, 'span.tiempo_rel[data-time]')
+
+                    if len(time_spans) < 2:
+                        # Need at least start and end timestamps
+                        continue
+
+                    # First timestamp is start time, second is main deadline
+                    start_timestamp = int(time_spans[0].get_attribute('data-time'))
+                    deadline_timestamp = int(time_spans[1].get_attribute('data-time'))
+
+                    # Check for optional late deadline
+                    late_deadline_timestamp = None
+                    if len(time_spans) >= 3:
+                        late_deadline_timestamp = int(time_spans[2].get_attribute('data-time'))
+
+                    # Convert to datetime objects
+                    start_time = datetime.fromtimestamp(start_timestamp)
+                    deadline_time = datetime.fromtimestamp(deadline_timestamp)
+
+                    # Extract state (Finalizada/En Plazo)
+                    try:
+                        state_elem = row.find_element(By.CSS_SELECTOR, 'td.string h1')
+                        state_text = state_elem.text.strip()
+                        is_finished = 'Finalizada' in state_text
+                    except:
+                        is_finished = False
+
+                    # Extract submission state from pill
+                    submission_state = "Pendiente"
+                    try:
+                        pill = row.find_element(By.CSS_SELECTOR, 'div.pill')
+                        pill_text = pill.text.strip()
+                        if 'Entregada' in pill_text or '✓' in pill_text:
+                            submission_state = "Entregada"
+                        elif 'Sin Entrega' in pill_text or '✗' in pill_text:
+                            submission_state = "Sin Entrega"
+                    except:
+                        pass
+
+                    # Create event dictionary for main deadline
+                    event = {
+                        'title': title,
+                        'course': course['code'],
+                        'course_name': course['name'],
+                        'category': current_category if current_category else "Tareas",
+                        'start_time': start_time,
+                        'deadline': deadline_time,
+                        'late_deadline': datetime.fromtimestamp(late_deadline_timestamp) if late_deadline_timestamp else None,
+                        'state': 'Finalizada' if is_finished else 'En Plazo',
+                        'submission_state': submission_state,
+                        'url': url
+                    }
+
+                    events.append(event)
+                    print(f'      📅 Found tarea: {title} -> Deadline: {deadline_time.strftime("%Y-%m-%d %H:%M")}')
+
+                except NoSuchElementException:
+                    # Skip rows that don't have the expected structure
+                    continue
+                except Exception as e:
+                    print(f'      ⚠️  Error parsing tarea row: {e}')
+                    continue
+
+        print(f'   ✅ Found {len(events)} tarea deadline(s)')
+        return events
+
+    except NoSuchElementException:
+        print(f'   ⚠️  No tareas table found')
+        return []
+    except Exception as e:
+        print(f'   ❌ Error scraping Tareas: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 def scrape_course_sections(driver, course, sections=None, output_dir=None):
