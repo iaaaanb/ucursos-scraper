@@ -189,6 +189,39 @@ downloads/
     └── ...
 ```
 
+## 🚧 Pending Implementation
+
+The following features are planned but not yet implemented:
+
+### Novedades Section - PDF/ZIP Downloads
+
+The Novedades (announcements) section contains posts with downloadable attachments that need to be scraped:
+
+- Posts are in divs with class `post objeto`
+- Each post may contain:
+  - An `<a>` tag with PDF download link
+  - An `<a>` tag with ZIP download link (if PDF exists)
+- **Desired structure**: `downloads/<course>/Cátedras/<pdf_name>/`
+- Both PDF and ZIP files should be saved in the same folder
+
+**Implementation location**: `src/scraper.py:scrape_novedades()` (lines 385-402)
+
+### Tareas Section - Enhanced Scraping
+
+Currently only basic scraping is implemented. The following enhancements are needed:
+
+- **Category grouping**: Apply same separator bar logic as Material Docente section
+- **Deadline tracking**:
+  - Extract primary deadline
+  - Extract optional "Aceptando atrasos hasta:" (accepting late submissions) deadline
+- **State tracking**:
+  - Assignment state: `Finalizada` / `En Plazo`
+  - Submission state: `entregada` / `sin entrega` / `pendiente`
+- **File downloads**: Download attached files from the "descripción" (description) section
+- **Desired structure**: `downloads/<course>/<tarea_name>/` for each assignment's files
+
+**Implementation location**: `src/scraper.py:scrape_tareas()` (lines 405-424)
+
 ## Calendar Import
 
 The generated `.ics` file can be imported into:
