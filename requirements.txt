@@ -2,6 +2,7 @@
 selenium>=4.15.0
 icalendar>=5.0.11
 click>=8.1.7
+requests>=2.31.0
 
 # Environment and configuration
 python-dotenv>=1.0.0
