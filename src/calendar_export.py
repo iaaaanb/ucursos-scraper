@@ -209,10 +209,73 @@ def create_control_event(event_data):
     return event
 
 
+def create_tarea_event(event_data):
+    """
+    Create an iCalendar Event for a Tarea (assignment) deadline.
+
+    Args:
+        event_data (dict): Event information with 'title', 'course', 'course_name',
+                          'deadline', 'submission_state', 'url'
+
+    Returns:
+        Event: iCalendar Event object
+    """
+    event = Event()
+
+    # Set title with abbreviated course name prefix and submission state
+    course_abbrev = get_course_abbreviation(event_data['course_name'])
+    submission_state = event_data.get('submission_state', 'Pendiente')
+    title = f"[{course_abbrev}] {event_data['title']}"
+
+    # Add submission status indicator
+    if submission_state == 'Entregada':
+        title += " ✓"
+    elif submission_state == 'Sin Entrega':
+        title += " ✗"
+
+    event.add('summary', title)
+
+    # Set description
+    description = f"Estado: {event_data.get('state', 'Desconocido')}\n"
+    description += f"Entrega: {submission_state}\n"
+
+    if event_data.get('late_deadline'):
+        late_deadline_str = event_data['late_deadline'].strftime('%Y-%m-%d %H:%M')
+        description += f"Acepta atrasos hasta: {late_deadline_str}\n"
+
+    if event_data.get('url'):
+        description += f"\nURL: {event_data['url']}"
+
+    event.add('description', description)
+
+    # Use deadline as both start and end (all-day event)
+    deadline = event_data['deadline']
+    event.add('dtstart', deadline)
+    event.add('dtend', deadline)
+
+    # Set categories
+    event.add('categories', ['Tareas', event_data['course_name']])
+
+    # Add alarm: 1 day before deadline
+    alarm = Alarm()
+    alarm.add('action', 'DISPLAY')
+    alarm.add('trigger', timedelta(days=-1))
+    alarm.add('description', f'Tarea mañana: {title}')
+    event.add_component(alarm)
+
+    # Set UID for the event
+    event.add('uid', f"tarea-{event_data['course']}-{hash(str(event_data))}@ucursos")
+
+    # Add timestamp
+    event.add('dtstamp', datetime.now())
+
+    return event
+
+
 def export_calendar(driver, courses, output_path):
     """
-    Export Control events (exams/tests) to ICS file.
-    Scrapes calendario section for each course and extracts Control events only.
+    Export Control events and Tarea deadlines to ICS file.
+    Scrapes calendario and tareas sections for each course.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
@@ -224,6 +287,7 @@ def export_calendar(driver, courses, output_path):
     """
     stats = {
         'controles': 0,
+        'tareas': 0,
         'total': 0
     }
 
@@ -232,44 +296,59 @@ def export_calendar(driver, courses, output_path):
     cal.add('prodid', '-//U-Cursos Scraper//EN')
     cal.add('version', '2.0')
     cal.add('calscale', 'GREGORIAN')
-    cal.add('x-wr-calname', 'U-Cursos Controles')
+    cal.add('x-wr-calname', 'U-Cursos')
     cal.add('x-wr-timezone', 'America/Santiago')
-    cal.add('x-wr-caldesc', 'Control events (exams/tests) from U-Cursos')
+    cal.add('x-wr-caldesc', 'Control events and Tarea deadlines from U-Cursos')
 
     try:
-        print('📅 Extracting Control events from all courses...\n')
+        print('📅 Extracting events from all courses...\n')
 
-        all_events = []
+        all_control_events = []
+        all_tarea_events = []
 
-        # Scrape each course's calendario
+        # Scrape each course
         for course in courses:
             print(f'   📖 Scraping {course["code"]} - {course["name"]}')
 
-            # Navigate to the calendario section
+            # Extract control events from calendario
             calendario_url = course['url'].rstrip('/') + '/calendario/'
             driver.get(calendario_url)
 
-            # Wait for table to load
             try:
                 WebDriverWait(driver, 5).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'table.sortable'))
                 )
+                control_events = get_control_events(driver, course)
+                all_control_events.extend(control_events)
+                print(f'      ✅ Found {len(control_events)} Control event(s)')
             except:
                 print(f'      ⚠️  No calendario table found')
-                continue
 
-            # Extract control events
-            events = get_control_events(driver, course)
-            all_events.extend(events)
-            print(f'      ✅ Found {len(events)} Control event(s)')
+            # Extract tarea deadlines from tareas section
+            from scraper import scrape_tareas
+            tareas_url = course['url'].rstrip('/') + '/tareas/'
+            driver.get(tareas_url)
 
-        # Add all events to calendar
-        for event_data in all_events:
+            import time
+            time.sleep(1)  # Wait for page to load
+
+            tarea_events = scrape_tareas(driver, course)
+            all_tarea_events.extend(tarea_events)
+            print(f'      ✅ Found {len(tarea_events)} Tarea deadline(s)')
+
+        # Add all control events to calendar
+        for event_data in all_control_events:
             event = create_control_event(event_data)
             cal.add_component(event)
             stats['controles'] += 1
 
-        stats['total'] = stats['controles']
+        # Add all tarea events to calendar
+        for event_data in all_tarea_events:
+            event = create_tarea_event(event_data)
+            cal.add_component(event)
+            stats['tareas'] += 1
+
+        stats['total'] = stats['controles'] + stats['tareas']
 
         # Write to file
         output_file = Path(output_path)
@@ -279,7 +358,9 @@ def export_calendar(driver, courses, output_path):
             f.write(cal.to_ical())
 
         print(f'\n✅ Calendar exported successfully!')
-        print(f'   Total Control events: {stats["total"]}')
+        print(f'   Control events: {stats["controles"]}')
+        print(f'   Tarea deadlines: {stats["tareas"]}')
+        print(f'   Total events: {stats["total"]}')
         print(f'   File: {output_file.absolute()}')
 
         return stats

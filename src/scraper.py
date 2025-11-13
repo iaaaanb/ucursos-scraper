@@ -9,6 +9,7 @@ import time
 import shutil
 import glob
 from pathlib import Path
+from datetime import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -387,6 +388,9 @@ def scrape_novedades_page(driver, post_offset=0):
     Scrape PDF and ZIP attachments from a single page of Novedades posts.
     Helper function for scrape_novedades() that handles one page at a time.
 
+    PDFs are downloaded to folders named after the PDF filename.
+    If a ZIP file immediately follows a PDF, it goes in the same folder.
+
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         post_offset (int): Offset for post numbering (for sequential numbering across pages)
@@ -402,100 +406,121 @@ def scrape_novedades_page(driver, post_offset=0):
 
         for idx, post in enumerate(posts):
             try:
-                # Extract post title (try multiple selectors)
-                post_title = None
-                try:
-                    # Try finding title in h1, h2, or h3 elements
-                    title_elem = post.find_element(By.CSS_SELECTOR, 'h1, h2, h3')
-                    post_title = title_elem.text.strip()
-                except NoSuchElementException:
-                    # Fallback: try to get from any text content
-                    try:
-                        # Look for a link or strong text that might be the title
-                        title_elem = post.find_element(By.CSS_SELECTOR, 'strong, b, a')
-                        post_title = title_elem.text.strip()
-                    except:
-                        # Last resort: use a generic name
-                        post_title = f'Post_{post_offset + idx + 1}'
-
-                # Sanitize post title for use as folder name
-                post_folder = sanitize_filename(post_title) if post_title else f'Post_{post_offset + idx + 1}'
-
-                # Find all download links in the post
+                # Find all download links (PDFs and ZIPs) in order
                 download_links = post.find_elements(By.CSS_SELECTOR, 'a[href]')
 
-                pdf_links = []
-                zip_links = []
-
+                # Filter to only file download links (have data-name or file extension in href)
+                file_links = []
                 for link in download_links:
                     href = link.get_attribute('href')
+                    data_name = link.get_attribute('data-name')
+                    class_attr = link.get_attribute('class') or ''
+
                     if not href:
                         continue
 
-                    # Check if link is for PDF or ZIP
-                    if '.pdf' in href.lower() or 'pdf' in href.lower():
-                        pdf_links.append(link)
-                    elif '.zip' in href.lower() or 'zip' in href.lower():
-                        zip_links.append(link)
-
-                # Process PDF files
-                for pdf_link in pdf_links:
-                    try:
-                        href = pdf_link.get_attribute('href')
-                        # Try to get filename from link text or use generic name
-                        link_text = pdf_link.text.strip()
-                        filename = link_text if link_text else 'document.pdf'
-
-                        # Ensure filename has .pdf extension
-                        if not filename.lower().endswith('.pdf'):
-                            filename += '.pdf'
-
-                        page_files.append({
-                            'name': filename,
-                            'url': href,
-                            'category': 'Cátedras',
-                            'subfolder': post_folder,
-                            'size': 'unknown'
-                        })
-                        print(f'      📄 Found PDF: {filename} in {post_folder}')
-
-                    except Exception as e:
-                        print(f'      ⚠️  Error processing PDF link: {e}')
+                    # Skip external links (different servers/domains)
+                    # Only process internal U-Cursos files (relative URLs or same domain)
+                    if href.startswith('http://') or href.startswith('https://'):
+                        # External URL - skip it
                         continue
 
-                # Process ZIP files
-                for zip_link in zip_links:
-                    try:
-                        href = zip_link.get_attribute('href')
-                        # Try to get filename from link text or use generic name
-                        link_text = zip_link.text.strip()
-                        filename = link_text if link_text else 'archive.zip'
+                    # Check if it's a file download link
+                    is_pdf = '.pdf' in href.lower() or (data_name and data_name.lower().endswith('.pdf'))
+                    is_zip = '.zip' in href.lower() or (data_name and data_name.lower().endswith('.zip'))
 
-                        # Ensure filename has .zip extension
-                        if not filename.lower().endswith('.zip'):
-                            filename += '.zip'
+                    # Check if PDF uses lightbox (which needs special handling)
+                    is_lightbox = 'lightbox' in class_attr
 
-                        page_files.append({
-                            'name': filename,
-                            'url': href,
-                            'category': 'Cátedras',
-                            'subfolder': post_folder,
-                            'size': 'unknown'
+                    if is_pdf or is_zip:
+                        file_links.append({
+                            'element': link,
+                            'href': href,
+                            'data_name': data_name,
+                            'is_pdf': is_pdf,
+                            'is_zip': is_zip,
+                            'is_lightbox': is_lightbox
                         })
-                        print(f'      📦 Found ZIP: {filename} in {post_folder}')
 
-                    except Exception as e:
-                        print(f'      ⚠️  Error processing ZIP link: {e}')
-                        continue
+                # Process file links sequentially
+                i = 0
+                while i < len(file_links):
+                    link_info = file_links[i]
+
+                    if link_info['is_pdf']:
+                        # Extract PDF filename from data-name or href
+                        pdf_filename = link_info['data_name']
+                        if not pdf_filename:
+                            # Fallback: extract from href
+                            pdf_filename = link_info['href'].split('/')[-1].split('?')[0]
+
+                        # Clean filename: replace spaces with dashes
+                        pdf_filename = pdf_filename.replace(' ', '-')
+
+                        # Create folder name from PDF filename (without .pdf extension)
+                        folder_name = pdf_filename
+                        if folder_name.lower().endswith('.pdf'):
+                            folder_name = folder_name[:-4]  # Remove .pdf extension
+
+                        # Sanitize folder name
+                        folder_name = sanitize_filename(folder_name)
+
+                        # Add PDF to download list
+                        page_files.append({
+                            'name': pdf_filename,
+                            'url': link_info['href'],
+                            'category': 'Cátedras',
+                            'subfolder': folder_name,
+                            'size': 'unknown',
+                            'is_lightbox': link_info.get('is_lightbox', False)
+                        })
+                        print(f'      📄 Found PDF: {pdf_filename} -> {folder_name}/')
+
+                        # Check if next link is a ZIP (companion file)
+                        if i + 1 < len(file_links) and file_links[i + 1]['is_zip']:
+                            zip_link = file_links[i + 1]
+
+                            # Extract ZIP filename
+                            zip_filename = zip_link['data_name']
+                            if not zip_filename:
+                                # Fallback: extract from href
+                                zip_filename = zip_link['href'].split('/')[-1].split('?')[0]
+
+                            # Clean filename
+                            zip_filename = zip_filename.replace(' ', '-')
+
+                            # Add ZIP to same folder as PDF
+                            page_files.append({
+                                'name': zip_filename,
+                                'url': zip_link['href'],
+                                'category': 'Cátedras',
+                                'subfolder': folder_name,
+                                'size': 'unknown'
+                            })
+                            print(f'      📦 Found ZIP: {zip_filename} -> {folder_name}/')
+
+                            # Skip the ZIP link since we processed it
+                            i += 2
+                        else:
+                            # No ZIP after this PDF, move to next
+                            i += 1
+                    else:
+                        # Standalone ZIP (no PDF before it) - skip or handle differently
+                        # For now, skip standalone ZIPs
+                        i += 1
 
             except Exception as e:
                 print(f'      ⚠️  Error processing post {post_offset + idx + 1}: {e}')
+                import traceback
+                traceback.print_exc()
                 continue
 
         return page_files, len(posts)
 
     except Exception as e:
         print(f'      ⚠️  Error scraping page: {e}')
+        import traceback
+        traceback.print_exc()
         return page_files, 0
 
 
@@ -606,24 +631,132 @@ def scrape_novedades(driver, course, output_dir=None):
 
 def scrape_tareas(driver, course):
     """
-    Scrape attached files from Tareas (assignments) section.
-    Only extracts attached files (PDFs, ZIPs, etc.), ignores deadlines.
-    Note: Assignment deadlines are scraped from Calendario instead.
+    Scrape assignment deadlines from Tareas (assignments) section.
+    Extracts deadline information for calendar event creation.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         course (dict): Course dictionary
 
     Returns:
-        list: List of file dictionaries with 'name', 'url', 'category'
+        list: List of event dictionaries with deadline information
     """
-    print(f'   📝 Scraping Tareas (files only) for {course["code"]}...')
+    print(f'   📝 Scraping Tareas deadlines for {course["code"]}...')
 
-    # TODO: Implement tareas file scraping
-    # Extract only attached files (PDFs, ZIPs, etc.)
-    # Ignore assignment deadlines (handled by Calendario)
+    events = []
 
-    return []
+    try:
+        # Find the tareas table
+        table = driver.find_element(By.CSS_SELECTOR, 'table')
+
+        # Find all tbody elements
+        tbody_elements = table.find_elements(By.TAG_NAME, 'tbody')
+
+        current_category = None
+
+        for tbody in tbody_elements:
+            # Check if this tbody contains a separator row
+            separator_rows = tbody.find_elements(By.CSS_SELECTOR, 'tr.separador[data-categoria]')
+
+            if separator_rows:
+                # This is a separator - update current category
+                separator = separator_rows[0]
+                category_name = separator.get_attribute('data-categoria')
+
+                if not category_name or category_name.strip() == "":
+                    category_name = "Tareas"
+
+                current_category = category_name
+                continue
+
+            # This tbody contains tarea rows - extract deadline info
+            tarea_rows = tbody.find_elements(By.CSS_SELECTOR, 'tr')
+
+            for row in tarea_rows:
+                try:
+                    # Extract title from h1 > a
+                    title_elem = row.find_element(By.CSS_SELECTOR, 'td.string h1 a')
+                    title = title_elem.text.strip()
+                    url = title_elem.get_attribute('href')
+
+                    # Extract deadline timestamps from h2
+                    h2_elem = row.find_element(By.CSS_SELECTOR, 'td.string h2')
+
+                    # Find all timestamp elements
+                    time_spans = h2_elem.find_elements(By.CSS_SELECTOR, 'span.tiempo_rel[data-time]')
+
+                    if len(time_spans) < 2:
+                        # Need at least start and end timestamps
+                        continue
+
+                    # First timestamp is start time, second is main deadline
+                    start_timestamp = int(time_spans[0].get_attribute('data-time'))
+                    deadline_timestamp = int(time_spans[1].get_attribute('data-time'))
+
+                    # Check for optional late deadline
+                    late_deadline_timestamp = None
+                    if len(time_spans) >= 3:
+                        late_deadline_timestamp = int(time_spans[2].get_attribute('data-time'))
+
+                    # Convert to datetime objects
+                    start_time = datetime.fromtimestamp(start_timestamp)
+                    deadline_time = datetime.fromtimestamp(deadline_timestamp)
+
+                    # Extract state (Finalizada/En Plazo)
+                    try:
+                        state_elem = row.find_element(By.CSS_SELECTOR, 'td.string h1')
+                        state_text = state_elem.text.strip()
+                        is_finished = 'Finalizada' in state_text
+                    except:
+                        is_finished = False
+
+                    # Extract submission state from pill
+                    submission_state = "Pendiente"
+                    try:
+                        pill = row.find_element(By.CSS_SELECTOR, 'div.pill')
+                        pill_text = pill.text.strip()
+                        if 'Entregada' in pill_text or '✓' in pill_text:
+                            submission_state = "Entregada"
+                        elif 'Sin Entrega' in pill_text or '✗' in pill_text:
+                            submission_state = "Sin Entrega"
+                    except:
+                        pass
+
+                    # Create event dictionary for main deadline
+                    event = {
+                        'title': title,
+                        'course': course['code'],
+                        'course_name': course['name'],
+                        'category': current_category if current_category else "Tareas",
+                        'start_time': start_time,
+                        'deadline': deadline_time,
+                        'late_deadline': datetime.fromtimestamp(late_deadline_timestamp) if late_deadline_timestamp else None,
+                        'state': 'Finalizada' if is_finished else 'En Plazo',
+                        'submission_state': submission_state,
+                        'url': url
+                    }
+
+                    events.append(event)
+                    print(f'      📅 Found tarea: {title} -> Deadline: {deadline_time.strftime("%Y-%m-%d %H:%M")}')
+
+                except NoSuchElementException:
+                    # Skip rows that don't have the expected structure
+                    continue
+                except Exception as e:
+                    print(f'      ⚠️  Error parsing tarea row: {e}')
+                    continue
+
+        print(f'   ✅ Found {len(events)} tarea deadline(s)')
+        return events
+
+    except NoSuchElementException:
+        print(f'   ⚠️  No tareas table found')
+        return []
+    except Exception as e:
+        print(f'   ❌ Error scraping Tareas: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 def scrape_course_sections(driver, course, sections=None, output_dir=None):
@@ -754,10 +887,11 @@ def wait_for_download(download_dir, timeout=30):
 def download_file(driver, file_info, output_path, download_dir):
     """
     Download a single file from U-Cursos.
+    Handles lightbox PDFs and external links by using direct HTTP download.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
-        file_info (dict): File information dictionary with 'name', 'url', 'size'
+        file_info (dict): File information dictionary with 'name', 'url', 'size', 'is_lightbox'
         output_path (Path): Path where file should be saved
         download_dir (str or Path): Temporary download directory
 
@@ -772,29 +906,73 @@ def download_file(driver, file_info, output_path, download_dir):
         file_size = file_info.get('size', 'unknown size')
         print(f'   ⬇️  Downloading: {file_info["name"]} ({file_size})')
 
-        # Clear download directory before download
-        download_path = Path(download_dir)
-        for file in download_path.glob('*'):
-            try:
-                file.unlink()
-            except:
-                pass
+        # Check if this is a lightbox PDF (needs special handling)
+        is_lightbox = file_info.get('is_lightbox', False)
 
-        # Navigate to download URL to trigger download
-        driver.get(file_info['url'])
+        # Check if this is an external URL (different domain)
+        file_url = file_info['url']
+        is_external = file_url.startswith('http://') or file_url.startswith('https://')
 
-        # Wait for file to appear in download directory
-        downloaded_file = wait_for_download(download_dir, timeout=30)
+        # For external URLs or lightbox PDFs, use requests library
+        if is_lightbox or is_external:
+            import requests
 
-        if not downloaded_file:
-            print(f'      ⚠️  Download timeout for {file_info["name"]}')
-            return False
+            # Get the absolute URL
+            if not file_url.startswith('http'):
+                # Relative URL - make it absolute
+                current_url = driver.current_url
+                from urllib.parse import urljoin
+                file_url = urljoin(current_url, file_url)
 
-        # Move file to final location
-        shutil.move(str(downloaded_file), str(output_path))
-        print(f'      ✅ Saved to: {output_path.relative_to(output_path.parents[2])}')
+            # For lightbox PDFs (internal U-Cursos), use session cookies
+            if is_lightbox and not is_external:
+                # Get cookies from Selenium driver
+                cookies = driver.get_cookies()
+                session = requests.Session()
+                for cookie in cookies:
+                    session.cookies.set(cookie['name'], cookie['value'])
 
-        return True
+                # Download the file using requests with authentication
+                response = session.get(file_url, stream=True)
+            else:
+                # For external URLs, no authentication needed
+                response = requests.get(file_url, stream=True, timeout=30)
+
+            response.raise_for_status()
+
+            # Write directly to output file
+            with open(output_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            print(f'      ✅ Saved to: {output_path.relative_to(output_path.parents[2])}')
+            return True
+
+        else:
+            # For internal non-lightbox files, use regular Selenium download
+            # Clear download directory before download
+            download_path = Path(download_dir)
+            for file in download_path.glob('*'):
+                try:
+                    file.unlink()
+                except:
+                    pass
+
+            # Navigate to download URL to trigger download
+            driver.get(file_info['url'])
+
+            # Wait for file to appear in download directory
+            downloaded_file = wait_for_download(download_dir, timeout=30)
+
+            if not downloaded_file:
+                print(f'      ⚠️  Download timeout for {file_info["name"]}')
+                return False
+
+            # Move file to final location
+            shutil.move(str(downloaded_file), str(output_path))
+            print(f'      ✅ Saved to: {output_path.relative_to(output_path.parents[2])}')
+
+            return True
 
     except Exception as e:
         print(f'   ❌ Failed to download {file_info["name"]}: {str(e)}')
