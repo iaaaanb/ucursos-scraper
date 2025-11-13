@@ -4,12 +4,20 @@ Organizes downloads by Course/Category/files.pdf structure.
 """
 
 import os
+import sys
 import time
 from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+
+# Add parent directory to path to import config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import DOWNLOAD_DIR
+
+# Note: COURSE_ABBREVIATIONS is available in config.py but NOT used for folder names
+# Folder names always use full course names for clarity
 
 
 def sanitize_filename(filename):

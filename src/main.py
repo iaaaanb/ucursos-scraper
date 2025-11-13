@@ -10,6 +10,10 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
+# Add parent directory to path to import config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import DOWNLOAD_DIR
+
 # Load environment variables
 load_dotenv()
 
@@ -34,7 +38,7 @@ def cli():
 
 @cli.command()
 @click.option('--headless/--no-headless', default=True, help='Run browser in headless mode')
-@click.option('--output', '-o', default='./downloads', help='Download directory path')
+@click.option('--output', '-o', default=f'./{DOWNLOAD_DIR}', help='Download directory path')
 def sync(headless, output):
     """
     Sync all content: download files and export calendar.
@@ -82,7 +86,7 @@ def sync(headless, output):
 
 @cli.command()
 @click.option('--headless/--no-headless', default=True, help='Run browser in headless mode')
-@click.option('--output', '-o', default='./downloads', help='Download directory path')
+@click.option('--output', '-o', default=f'./{DOWNLOAD_DIR}', help='Download directory path')
 @click.option('--course', '-c', help='Download files for specific course only')
 def download(headless, output, course):
     """

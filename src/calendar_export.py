@@ -4,6 +4,7 @@ Exports Control events (exams/tests) to ICS calendar format.
 """
 
 import re
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from icalendar import Calendar, Event, Alarm
@@ -11,21 +12,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-
-# Course name abbreviations for calendar event titles
-# Used to make event titles more readable with personalized short names
-# These abbreviations are ONLY used in calendar event titles, not in:
-# - File download folder names (keep full course names)
-# - Category tags (use full course name)
-# - Any other output
-# TODO: When Tareas scraping is implemented, use this same mapping for event titles
-COURSE_ABBREVIATIONS = {
-    "Análisis Avanzado de Algoritmos": "Análisis",
-    "Bases de Datos": "Batos",
-    "Matemáticas Discretas para la Computación": "Discretas",
-    "Metodologías de Diseño y Programación": "Memes",
-    "Programación de Software de Sistemas": "PSS",
-}
+# Add parent directory to path to import config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import COURSE_ABBREVIATIONS
 
 
 def get_course_abbreviation(course_name):
