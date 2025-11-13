@@ -413,6 +413,7 @@ def scrape_novedades_page(driver, post_offset=0):
                 for link in download_links:
                     href = link.get_attribute('href')
                     data_name = link.get_attribute('data-name')
+                    class_attr = link.get_attribute('class') or ''
 
                     if not href:
                         continue
@@ -421,13 +422,17 @@ def scrape_novedades_page(driver, post_offset=0):
                     is_pdf = '.pdf' in href.lower() or (data_name and data_name.lower().endswith('.pdf'))
                     is_zip = '.zip' in href.lower() or (data_name and data_name.lower().endswith('.zip'))
 
+                    # Check if PDF uses lightbox (which needs special handling)
+                    is_lightbox = 'lightbox' in class_attr
+
                     if is_pdf or is_zip:
                         file_links.append({
                             'element': link,
                             'href': href,
                             'data_name': data_name,
                             'is_pdf': is_pdf,
-                            'is_zip': is_zip
+                            'is_zip': is_zip,
+                            'is_lightbox': is_lightbox
                         })
 
                 # Process file links sequentially
@@ -459,7 +464,8 @@ def scrape_novedades_page(driver, post_offset=0):
                             'url': link_info['href'],
                             'category': 'Cátedras',
                             'subfolder': folder_name,
-                            'size': 'unknown'
+                            'size': 'unknown',
+                            'is_lightbox': link_info.get('is_lightbox', False)
                         })
                         print(f'      📄 Found PDF: {pdf_filename} -> {folder_name}/')
 
@@ -766,10 +772,11 @@ def wait_for_download(download_dir, timeout=30):
 def download_file(driver, file_info, output_path, download_dir):
     """
     Download a single file from U-Cursos.
+    Handles lightbox PDFs by using direct HTTP download with session cookies.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
-        file_info (dict): File information dictionary with 'name', 'url', 'size'
+        file_info (dict): File information dictionary with 'name', 'url', 'size', 'is_lightbox'
         output_path (Path): Path where file should be saved
         download_dir (str or Path): Temporary download directory
 
@@ -784,29 +791,64 @@ def download_file(driver, file_info, output_path, download_dir):
         file_size = file_info.get('size', 'unknown size')
         print(f'   ⬇️  Downloading: {file_info["name"]} ({file_size})')
 
-        # Clear download directory before download
-        download_path = Path(download_dir)
-        for file in download_path.glob('*'):
-            try:
-                file.unlink()
-            except:
-                pass
+        # Check if this is a lightbox PDF (needs special handling)
+        is_lightbox = file_info.get('is_lightbox', False)
 
-        # Navigate to download URL to trigger download
-        driver.get(file_info['url'])
+        if is_lightbox:
+            # For lightbox PDFs, use requests with driver's cookies to download directly
+            import requests
 
-        # Wait for file to appear in download directory
-        downloaded_file = wait_for_download(download_dir, timeout=30)
+            # Get cookies from Selenium driver
+            cookies = driver.get_cookies()
+            session = requests.Session()
+            for cookie in cookies:
+                session.cookies.set(cookie['name'], cookie['value'])
 
-        if not downloaded_file:
-            print(f'      ⚠️  Download timeout for {file_info["name"]}')
-            return False
+            # Get the absolute URL
+            file_url = file_info['url']
+            if not file_url.startswith('http'):
+                # Relative URL - make it absolute
+                current_url = driver.current_url
+                from urllib.parse import urljoin
+                file_url = urljoin(current_url, file_url)
 
-        # Move file to final location
-        shutil.move(str(downloaded_file), str(output_path))
-        print(f'      ✅ Saved to: {output_path.relative_to(output_path.parents[2])}')
+            # Download the file using requests
+            response = session.get(file_url, stream=True)
+            response.raise_for_status()
 
-        return True
+            # Write directly to output file
+            with open(output_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            print(f'      ✅ Saved to: {output_path.relative_to(output_path.parents[2])}')
+            return True
+
+        else:
+            # For non-lightbox files, use regular Selenium download
+            # Clear download directory before download
+            download_path = Path(download_dir)
+            for file in download_path.glob('*'):
+                try:
+                    file.unlink()
+                except:
+                    pass
+
+            # Navigate to download URL to trigger download
+            driver.get(file_info['url'])
+
+            # Wait for file to appear in download directory
+            downloaded_file = wait_for_download(download_dir, timeout=30)
+
+            if not downloaded_file:
+                print(f'      ⚠️  Download timeout for {file_info["name"]}')
+                return False
+
+            # Move file to final location
+            shutil.move(str(downloaded_file), str(output_path))
+            print(f'      ✅ Saved to: {output_path.relative_to(output_path.parents[2])}')
+
+            return True
 
     except Exception as e:
         print(f'   ❌ Failed to download {file_info["name"]}: {str(e)}')
