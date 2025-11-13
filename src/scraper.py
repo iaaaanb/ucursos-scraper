@@ -676,40 +676,44 @@ def scrape_course_sections(driver, course, sections=None, output_dir=None):
     return results
 
 
-def get_course_files(driver, course, output_dir=None):
+def get_course_files(driver, course, sections=None, output_dir=None):
     """
     Get list of files for a specific course by scraping multiple sections.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         course (dict): Course dictionary with course information
+        sections (list, optional): List of sections to scrape. Defaults to all file sections.
         output_dir (str, optional): Output directory for folder creation
 
     Returns:
         list: List of file dictionaries with 'name', 'url', 'category'
     """
+    # Default to all file sections (exclude calendario as it doesn't have files)
+    if sections is None:
+        sections = ['material_docente', 'novedades', 'tareas']
+
     print(f'🔍 Scraping sections for {course["name"]} ({course["code"]})')
 
-    # Scrape all relevant sections
-    section_data = scrape_course_sections(driver, course, output_dir=output_dir)
+    # Scrape specified sections
+    section_data = scrape_course_sections(driver, course, sections=sections, output_dir=output_dir)
 
     # Combine files from all sections
     all_files = []
 
     # Add files from Material Docente (teaching materials)
-    # NOTE: material_docente currently only creates folder structure, returns empty list
-    if section_data['material_docente']:
+    if 'material_docente' in section_data and section_data['material_docente']:
         all_files.extend(section_data['material_docente'])
 
     # Add PDFs from Novedades (announcement attachments)
-    if section_data['novedades']:
+    if 'novedades' in section_data and section_data['novedades']:
         all_files.extend(section_data['novedades'])
 
     # Add files from Tareas (assignment attachments)
-    if section_data['tareas']:
+    if 'tareas' in section_data and section_data['tareas']:
         all_files.extend(section_data['tareas'])
 
-    print(f'   ✅ Found {len(all_files)} file(s) across all sections')
+    print(f'   ✅ Found {len(all_files)} file(s) across selected sections')
 
     return all_files
 
@@ -799,13 +803,14 @@ def download_file(driver, file_info, output_path, download_dir):
         return False
 
 
-def download_files(driver, output_dir, course_filter=None):
+def download_files(driver, output_dir, sections=None, course_filter=None):
     """
-    Download all files from U-Cursos, organized by Course/Category/files.pdf.
+    Download files from U-Cursos, organized by Course/Category/files.pdf.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         output_dir (str): Base directory for downloads
+        sections (list, optional): List of sections to scrape. Defaults to all file sections.
         course_filter (str, optional): Only download files from this course
 
     Returns:
@@ -857,7 +862,7 @@ def download_files(driver, output_dir, course_filter=None):
             print(f'📖 Processing course: {course["name"]} ({course["code"]})')
 
             # Get files for this course (will create folders)
-            files = get_course_files(driver, course, output_dir=output_dir)
+            files = get_course_files(driver, course, sections=sections, output_dir=output_dir)
             stats['total_files'] += len(files)
 
             if not files:
