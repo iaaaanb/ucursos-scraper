@@ -14,12 +14,13 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 
 
-def get_driver(headless=False):
+def get_driver(headless=False, download_dir=None):
     """
     Initialize and return a Chromium WebDriver instance.
 
     Args:
         headless (bool): Run browser in headless mode
+        download_dir (str, optional): Directory for file downloads
 
     Returns:
         WebDriver: Configured Chromium WebDriver instance
@@ -34,7 +35,30 @@ def get_driver(headless=False):
     if headless:
         options.add_argument('--headless')
 
+    # Configure download directory and behavior
+    if download_dir:
+        prefs = {
+            'download.default_directory': download_dir,
+            'download.prompt_for_download': False,
+            'download.directory_upgrade': True,
+            'safebrowsing.enabled': True
+        }
+        options.add_experimental_option('prefs', prefs)
+
     driver = webdriver.Chrome(service=service, options=options)
+
+    # Enable downloads in headless mode
+    if headless and download_dir:
+        driver.command_executor._commands["send_command"] = (
+            "POST",
+            '/session/$sessionId/chromium/send_command'
+        )
+        params = {
+            'cmd': 'Page.setDownloadBehavior',
+            'params': {'behavior': 'allow', 'downloadPath': download_dir}
+        }
+        driver.execute("send_command", params)
+
     return driver
 
 

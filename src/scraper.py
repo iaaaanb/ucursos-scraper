@@ -6,6 +6,8 @@ Organizes downloads by Course/Category/files.pdf structure.
 import os
 import sys
 import time
+import shutil
+import glob
 from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -19,7 +21,7 @@ from config import DOWNLOAD_DIR, COURSE_ABBREVIATIONS
 
 def sanitize_filename(filename):
     """
-    Sanitize filename to remove invalid characters.
+    Sanitize filename to remove invalid characters and replace spaces with dashes.
 
     Args:
         filename (str): Original filename
@@ -27,9 +29,14 @@ def sanitize_filename(filename):
     Returns:
         str: Sanitized filename safe for filesystem
     """
+    # Replace invalid characters with underscore
     invalid_chars = '<>:"/\\|?*'
     for char in invalid_chars:
         filename = filename.replace(char, '_')
+
+    # Replace spaces with dashes
+    filename = filename.replace(' ', '-')
+
     return filename.strip()
 
 
@@ -266,9 +273,7 @@ def scrape_calendario(driver, course):
 def scrape_material_docente(driver, course, output_dir=None):
     """
     Scrape teaching materials from Material Docente section.
-    Extracts section names from separator bars and creates folder structure.
-
-    NOTE: Currently only creates folder structure. File scraping not yet implemented.
+    Extracts files organized by separator bar categories.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
@@ -276,7 +281,7 @@ def scrape_material_docente(driver, course, output_dir=None):
         output_dir (str, optional): Output directory for folder creation
 
     Returns:
-        list: Empty list (file scraping not yet implemented)
+        list: List of file dictionaries with 'name', 'url', 'category', 'size'
     """
     # Defensive coding: validate course is a dictionary
     if not isinstance(course, dict):
@@ -284,37 +289,73 @@ def scrape_material_docente(driver, course, output_dir=None):
 
     print(f'   📚 Scraping Material Docente for {course["code"]}...')
 
+    all_files = []
     sections = []
 
     try:
-        # Find all separator bars with data-categoria attribute
-        separator_rows = driver.find_elements(By.CSS_SELECTOR, 'tr.separador[data-categoria]')
+        # Find the materials table
+        table = driver.find_element(By.CSS_SELECTOR, 'table#materiales')
 
-        for separator in separator_rows:
-            # Get section name from data-categoria attribute
-            section_name = separator.get_attribute('data-categoria')
+        # Find all tbody elements
+        tbody_elements = table.find_elements(By.TAG_NAME, 'tbody')
 
-            # If empty or None, use "Otros" as default
-            if not section_name or section_name.strip() == "":
-                section_name = "Otros"
+        current_category = None
 
-            # Add to sections list if not already present
-            if section_name not in sections:
-                sections.append(section_name)
+        for tbody in tbody_elements:
+            # Check if this tbody contains a separator row
+            separator_rows = tbody.find_elements(By.CSS_SELECTOR, 'tr.separador[data-categoria]')
 
-        # If no sections found via data-categoria, try extracting from td text
-        if not sections:
-            separator_rows = driver.find_elements(By.CSS_SELECTOR, 'tr.separador td.sort')
-            for separator_td in separator_rows:
-                section_name = separator_td.text.strip()
+            if separator_rows:
+                # This is a separator - update current category
+                separator = separator_rows[0]
+                category_name = separator.get_attribute('data-categoria')
 
-                # If empty text, use "Otros"
-                if not section_name or section_name == "":
-                    section_name = "Otros"
+                # If empty or None, use "Otros" as default
+                if not category_name or category_name.strip() == "":
+                    category_name = "Otros"
+
+                current_category = category_name
 
                 # Add to sections list if not already present
-                if section_name not in sections:
-                    sections.append(section_name)
+                if category_name not in sections:
+                    sections.append(category_name)
+
+                continue
+
+            # This tbody contains files - extract them
+            file_rows = tbody.find_elements(By.CSS_SELECTOR, 'tr[data-id]')
+
+            for row in file_rows:
+                try:
+                    # Extract file ID
+                    file_id = row.get_attribute('data-id')
+
+                    # Extract filename from h1 > a
+                    filename_elem = row.find_element(By.CSS_SELECTOR, 'td.string h1 a')
+                    filename = filename_elem.text.strip()
+
+                    # Extract download URL (bajar link)
+                    download_link = row.find_element(By.CSS_SELECTOR, f'a[href*="bajar?id={file_id}"]')
+                    download_url = download_link.get_attribute('href')
+
+                    # Extract file size
+                    size_elem = row.find_element(By.CSS_SELECTOR, 'td.string h2')
+                    file_size = size_elem.text.strip()
+
+                    # Use current category or "Otros" if no category set yet
+                    category = current_category if current_category else "Otros"
+
+                    all_files.append({
+                        'name': filename,
+                        'url': download_url,
+                        'category': category,
+                        'size': file_size,
+                        'id': file_id
+                    })
+
+                except NoSuchElementException as e:
+                    print(f'      ⚠️  Error parsing file row: {e}')
+                    continue
 
         # Create folders if output_dir provided
         if output_dir and sections:
@@ -322,20 +363,17 @@ def scrape_material_docente(driver, course, output_dir=None):
 
             # Print summary
             if stats['created'] > 0 and stats['existing'] > 0:
-                print(f'   ✅ Created {stats["created"]} new section folder(s), found {stats["existing"]} existing')
+                print(f'   📁 Created {stats["created"]} new section folder(s), found {stats["existing"]} existing')
             elif stats['created'] > 0:
-                print(f'   ✅ Created {stats["created"]} new section folder(s)')
+                print(f'   📁 Created {stats["created"]} new section folder(s)')
             elif stats['existing'] > 0:
-                print(f'   📂 Found {stats["existing"]} existing section folder(s)')
-        elif sections:
-            print(f'   📑 Found {len(sections)} section(s) (no output directory specified)')
+                print(f'   📁 Found {stats["existing"]} existing section folder(s)')
 
-        # TODO: Implement actual file scraping from Material Docente
-        # For now, return empty list since we're only creating folder structure
-        return []
+        print(f'   ✅ Found {len(all_files)} file(s) in Material Docente')
+        return all_files
 
     except NoSuchElementException:
-        print(f'   ⚠️  No separator bars found in Material Docente')
+        print(f'   ⚠️  No materials table found in Material Docente')
         return []
     except Exception as e:
         print(f'   ❌ Error scraping Material Docente: {str(e)}')
@@ -474,36 +512,88 @@ def get_course_files(driver, course, output_dir=None):
     return all_files
 
 
-def download_file(driver, file_info, output_path):
+def wait_for_download(download_dir, timeout=30):
+    """
+    Wait for a file to finish downloading in the specified directory.
+
+    Args:
+        download_dir (str or Path): Directory to monitor for downloads
+        timeout (int): Maximum time to wait in seconds
+
+    Returns:
+        Path: Path to the downloaded file, or None if timeout
+    """
+    download_path = Path(download_dir)
+    seconds = 0
+
+    while seconds < timeout:
+        # Look for files that are not partial downloads (.crdownload, .tmp)
+        files = list(download_path.glob('*'))
+        complete_files = [
+            f for f in files
+            if f.is_file() and not f.name.endswith(('.crdownload', '.tmp', '.part'))
+        ]
+
+        if complete_files:
+            # Return the most recently modified file
+            latest_file = max(complete_files, key=lambda f: f.stat().st_mtime)
+            return latest_file
+
+        time.sleep(0.5)
+        seconds += 0.5
+
+    return None
+
+
+def download_file(driver, file_info, output_path, download_dir):
     """
     Download a single file from U-Cursos.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
-        file_info (dict): File information dictionary
+        file_info (dict): File information dictionary with 'name', 'url', 'size'
         output_path (Path): Path where file should be saved
+        download_dir (str or Path): Temporary download directory
 
     Returns:
         bool: True if download successful, False otherwise
     """
     try:
-        # TODO: Implement file download
-        # Navigate to file URL and trigger download
-
         # Create output directory if it doesn't exist
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        print(f'   📄 Downloading: {file_info["name"]} -> {output_path}')
+        # Get file size for display
+        file_size = file_info.get('size', 'unknown size')
+        print(f'   ⬇️  Downloading: {file_info["name"]} ({file_size})')
 
-        # Placeholder: simulate download
-        # driver.get(file_info['url'])
-        # Wait for download to complete
-        # time.sleep(2)
+        # Clear download directory before download
+        download_path = Path(download_dir)
+        for file in download_path.glob('*'):
+            try:
+                file.unlink()
+            except:
+                pass
+
+        # Navigate to download URL to trigger download
+        driver.get(file_info['url'])
+
+        # Wait for file to appear in download directory
+        downloaded_file = wait_for_download(download_dir, timeout=30)
+
+        if not downloaded_file:
+            print(f'      ⚠️  Download timeout for {file_info["name"]}')
+            return False
+
+        # Move file to final location
+        shutil.move(str(downloaded_file), str(output_path))
+        print(f'      ✅ Saved to: {output_path.relative_to(output_path.parents[2])}')
 
         return True
 
     except Exception as e:
         print(f'   ❌ Failed to download {file_info["name"]}: {str(e)}')
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -526,6 +616,25 @@ def download_files(driver, output_dir, course_filter=None):
         'skipped': 0,
         'failed': 0
     }
+
+    # Create temporary download directory
+    temp_download_dir = output_path / '.temp_downloads'
+    temp_download_dir.mkdir(parents=True, exist_ok=True)
+
+    # Configure Chrome to download to temp directory
+    try:
+        driver.command_executor._commands["send_command"] = (
+            "POST",
+            '/session/$sessionId/chromium/send_command'
+        )
+        params = {
+            'cmd': 'Page.setDownloadBehavior',
+            'params': {'behavior': 'allow', 'downloadPath': str(temp_download_dir.absolute())}
+        }
+        driver.execute("send_command", params)
+    except Exception as e:
+        print(f'⚠️  Could not configure download directory: {e}')
+        print(f'   Downloads may go to default browser location')
 
     try:
         # Get list of courses
@@ -562,24 +671,28 @@ def download_files(driver, output_dir, course_filter=None):
                         stats['failed'] += 1
                         continue
 
+                    # Get smart course folder name
+                    course_folder_name = get_course_folder_name(course, output_dir)
+
                     # Organize: output_dir/Course/Category/file.pdf
-                    course_name = sanitize_filename(course['name'])
-                    category = sanitize_filename(file_info.get('category', 'Other'))
+                    category = sanitize_filename(file_info.get('category', 'Otros'))
                     filename = sanitize_filename(file_info['name'])
 
-                    file_path = output_path / course_name / category / filename
+                    file_path = output_path / course_folder_name / category / filename
 
-                    # Skip if file already exists
+                    # Check if file already exists
                     if file_path.exists():
-                        print(f'   ⏭️  Skipping (already exists): {filename}')
+                        print(f'   ⏭️  Skipped (exists): {filename}')
                         stats['skipped'] += 1
-                        continue
+                        continue  # No wait time for skipped files
 
                     # Download the file
-                    success = download_file(driver, file_info, file_path)
+                    success = download_file(driver, file_info, file_path, temp_download_dir)
 
                     if success:
                         stats['downloaded'] += 1
+                        # Wait after successful download to avoid rate limiting
+                        time.sleep(2)
                     else:
                         stats['failed'] += 1
 
@@ -606,3 +719,11 @@ def download_files(driver, output_dir, course_filter=None):
     except Exception as e:
         print(f'❌ Error during file download: {str(e)}')
         raise
+
+    finally:
+        # Cleanup temporary download directory
+        try:
+            if temp_download_dir.exists():
+                shutil.rmtree(temp_download_dir)
+        except Exception as e:
+            print(f'⚠️  Could not remove temporary download directory: {e}')
