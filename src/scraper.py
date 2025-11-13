@@ -387,6 +387,9 @@ def scrape_novedades_page(driver, post_offset=0):
     Scrape PDF and ZIP attachments from a single page of Novedades posts.
     Helper function for scrape_novedades() that handles one page at a time.
 
+    PDFs are downloaded to folders named after the PDF filename.
+    If a ZIP file immediately follows a PDF, it goes in the same folder.
+
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         post_offset (int): Offset for post numbering (for sequential numbering across pages)
@@ -402,100 +405,109 @@ def scrape_novedades_page(driver, post_offset=0):
 
         for idx, post in enumerate(posts):
             try:
-                # Extract post title (try multiple selectors)
-                post_title = None
-                try:
-                    # Try finding title in h1, h2, or h3 elements
-                    title_elem = post.find_element(By.CSS_SELECTOR, 'h1, h2, h3')
-                    post_title = title_elem.text.strip()
-                except NoSuchElementException:
-                    # Fallback: try to get from any text content
-                    try:
-                        # Look for a link or strong text that might be the title
-                        title_elem = post.find_element(By.CSS_SELECTOR, 'strong, b, a')
-                        post_title = title_elem.text.strip()
-                    except:
-                        # Last resort: use a generic name
-                        post_title = f'Post_{post_offset + idx + 1}'
-
-                # Sanitize post title for use as folder name
-                post_folder = sanitize_filename(post_title) if post_title else f'Post_{post_offset + idx + 1}'
-
-                # Find all download links in the post
+                # Find all download links (PDFs and ZIPs) in order
                 download_links = post.find_elements(By.CSS_SELECTOR, 'a[href]')
 
-                pdf_links = []
-                zip_links = []
-
+                # Filter to only file download links (have data-name or file extension in href)
+                file_links = []
                 for link in download_links:
                     href = link.get_attribute('href')
+                    data_name = link.get_attribute('data-name')
+
                     if not href:
                         continue
 
-                    # Check if link is for PDF or ZIP
-                    if '.pdf' in href.lower() or 'pdf' in href.lower():
-                        pdf_links.append(link)
-                    elif '.zip' in href.lower() or 'zip' in href.lower():
-                        zip_links.append(link)
+                    # Check if it's a file download link
+                    is_pdf = '.pdf' in href.lower() or (data_name and data_name.lower().endswith('.pdf'))
+                    is_zip = '.zip' in href.lower() or (data_name and data_name.lower().endswith('.zip'))
 
-                # Process PDF files
-                for pdf_link in pdf_links:
-                    try:
-                        href = pdf_link.get_attribute('href')
-                        # Try to get filename from link text or use generic name
-                        link_text = pdf_link.text.strip()
-                        filename = link_text if link_text else 'document.pdf'
+                    if is_pdf or is_zip:
+                        file_links.append({
+                            'element': link,
+                            'href': href,
+                            'data_name': data_name,
+                            'is_pdf': is_pdf,
+                            'is_zip': is_zip
+                        })
 
-                        # Ensure filename has .pdf extension
-                        if not filename.lower().endswith('.pdf'):
-                            filename += '.pdf'
+                # Process file links sequentially
+                i = 0
+                while i < len(file_links):
+                    link_info = file_links[i]
 
+                    if link_info['is_pdf']:
+                        # Extract PDF filename from data-name or href
+                        pdf_filename = link_info['data_name']
+                        if not pdf_filename:
+                            # Fallback: extract from href
+                            pdf_filename = link_info['href'].split('/')[-1].split('?')[0]
+
+                        # Clean filename: replace spaces with dashes
+                        pdf_filename = pdf_filename.replace(' ', '-')
+
+                        # Create folder name from PDF filename (without .pdf extension)
+                        folder_name = pdf_filename
+                        if folder_name.lower().endswith('.pdf'):
+                            folder_name = folder_name[:-4]  # Remove .pdf extension
+
+                        # Sanitize folder name
+                        folder_name = sanitize_filename(folder_name)
+
+                        # Add PDF to download list
                         page_files.append({
-                            'name': filename,
-                            'url': href,
+                            'name': pdf_filename,
+                            'url': link_info['href'],
                             'category': 'Cátedras',
-                            'subfolder': post_folder,
+                            'subfolder': folder_name,
                             'size': 'unknown'
                         })
-                        print(f'      📄 Found PDF: {filename} in {post_folder}')
+                        print(f'      📄 Found PDF: {pdf_filename} -> {folder_name}/')
 
-                    except Exception as e:
-                        print(f'      ⚠️  Error processing PDF link: {e}')
-                        continue
+                        # Check if next link is a ZIP (companion file)
+                        if i + 1 < len(file_links) and file_links[i + 1]['is_zip']:
+                            zip_link = file_links[i + 1]
 
-                # Process ZIP files
-                for zip_link in zip_links:
-                    try:
-                        href = zip_link.get_attribute('href')
-                        # Try to get filename from link text or use generic name
-                        link_text = zip_link.text.strip()
-                        filename = link_text if link_text else 'archive.zip'
+                            # Extract ZIP filename
+                            zip_filename = zip_link['data_name']
+                            if not zip_filename:
+                                # Fallback: extract from href
+                                zip_filename = zip_link['href'].split('/')[-1].split('?')[0]
 
-                        # Ensure filename has .zip extension
-                        if not filename.lower().endswith('.zip'):
-                            filename += '.zip'
+                            # Clean filename
+                            zip_filename = zip_filename.replace(' ', '-')
 
-                        page_files.append({
-                            'name': filename,
-                            'url': href,
-                            'category': 'Cátedras',
-                            'subfolder': post_folder,
-                            'size': 'unknown'
-                        })
-                        print(f'      📦 Found ZIP: {filename} in {post_folder}')
+                            # Add ZIP to same folder as PDF
+                            page_files.append({
+                                'name': zip_filename,
+                                'url': zip_link['href'],
+                                'category': 'Cátedras',
+                                'subfolder': folder_name,
+                                'size': 'unknown'
+                            })
+                            print(f'      📦 Found ZIP: {zip_filename} -> {folder_name}/')
 
-                    except Exception as e:
-                        print(f'      ⚠️  Error processing ZIP link: {e}')
-                        continue
+                            # Skip the ZIP link since we processed it
+                            i += 2
+                        else:
+                            # No ZIP after this PDF, move to next
+                            i += 1
+                    else:
+                        # Standalone ZIP (no PDF before it) - skip or handle differently
+                        # For now, skip standalone ZIPs
+                        i += 1
 
             except Exception as e:
                 print(f'      ⚠️  Error processing post {post_offset + idx + 1}: {e}')
+                import traceback
+                traceback.print_exc()
                 continue
 
         return page_files, len(posts)
 
     except Exception as e:
         print(f'      ⚠️  Error scraping page: {e}')
+        import traceback
+        traceback.print_exc()
         return page_files, 0
 
 

@@ -189,11 +189,12 @@ downloads/
 │   │   └── Category 2/
 │   │       └── Assignment_01.pdf
 │   ├── Cátedras/
-│   │   ├── Post_Title_1/
-│   │   │   ├── document.pdf
-│   │   │   └── archive.zip
-│   │   └── Post_Title_2/
-│   │       └── presentation.pdf
+│   │   ├── unix-exec/
+│   │   │   ├── unix-exec.pdf
+│   │   │   └── exec.zip
+│   │   └── unix-varenv/
+│   │       ├── unix-varenv.pdf
+│   │       └── setjmp.zip
 │   └── Tareas/
 │       └── (coming soon)
 └── Course Name 2/
@@ -209,10 +210,11 @@ downloads/
 The Novedades (announcements) section scraper is fully implemented with:
 
 - ✅ Automatic pagination support - scrapes all pages
-- ✅ PDF and ZIP file detection and download
-- ✅ Nested folder structure: `downloads/<course>/Cátedras/<post_title>/[files]`
-- ✅ Both PDF and ZIP files from the same post saved to the same folder
-- ✅ Smart post title extraction with fallback handling
+- ✅ PDF and ZIP file detection from `data-name` attributes
+- ✅ Nested folder structure: `downloads/<course>/Cátedras/<pdf_filename>/[files]`
+- ✅ Sequential link processing - if ZIP follows PDF, both go in same folder
+- ✅ Folders named after PDF filenames (without extension)
+- ✅ Proper filename extraction with space-to-dash conversion
 - ✅ Robust error handling for malformed posts
 
 **Implementation**: `src/scraper.py:scrape_novedades()` and `scrape_novedades_page()`
