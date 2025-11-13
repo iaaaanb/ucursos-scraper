@@ -272,6 +272,69 @@ def create_tarea_event(event_data):
     return event
 
 
+def create_tarea_late_event(event_data):
+    """
+    Create an iCalendar Event for a Tarea's late submission deadline (Atrasos).
+
+    Args:
+        event_data (dict): Event information with 'title', 'course', 'course_name',
+                          'late_deadline', 'submission_state', 'url'
+
+    Returns:
+        Event: iCalendar Event object for late deadline
+    """
+    event = Event()
+
+    # Set title with abbreviated course name prefix, submission state, and " - Atraso" suffix
+    course_abbrev = get_course_abbreviation(event_data['course_name'])
+    submission_state = event_data.get('submission_state', 'Pendiente')
+    title = f"[{course_abbrev}] {event_data['title']}"
+
+    # Add submission status indicator
+    if submission_state == 'Entregada':
+        title += " ✓"
+    elif submission_state == 'Sin Entrega':
+        title += " ✗"
+
+    # Add " - Atraso" suffix
+    title += " - Atraso"
+
+    event.add('summary', title)
+
+    # Set description
+    description = f"Estado: {event_data.get('state', 'Desconocido')}\n"
+    description += f"Entrega: {submission_state}\n"
+    description += "Plazo de atrasos\n"
+
+    if event_data.get('url'):
+        description += f"\nURL: {event_data['url']}"
+
+    event.add('description', description)
+
+    # Use late_deadline as both start and end
+    late_deadline = event_data['late_deadline']
+    event.add('dtstart', late_deadline)
+    event.add('dtend', late_deadline)
+
+    # Set categories
+    event.add('categories', ['Tareas', 'Atrasos', event_data['course_name']])
+
+    # Add alarm: 1 day before late deadline
+    alarm = Alarm()
+    alarm.add('action', 'DISPLAY')
+    alarm.add('trigger', timedelta(days=-1))
+    alarm.add('description', f'Plazo de atrasos mañana: {title}')
+    event.add_component(alarm)
+
+    # Set UID for the event - different from main event to allow independent updates
+    event.add('uid', f"tarea-late-{event_data['course']}-{hash(str(event_data))}@ucursos")
+
+    # Add timestamp
+    event.add('dtstamp', datetime.now())
+
+    return event
+
+
 def export_calendar(driver, courses, output_path):
     """
     Export Control events and Tarea deadlines to ICS file.
@@ -344,9 +407,16 @@ def export_calendar(driver, courses, output_path):
 
         # Add all tarea events to calendar
         for event_data in all_tarea_events:
+            # Add main deadline event
             event = create_tarea_event(event_data)
             cal.add_component(event)
             stats['tareas'] += 1
+
+            # If late deadline exists, create second event for "Atrasos"
+            if event_data.get('late_deadline'):
+                late_event = create_tarea_late_event(event_data)
+                cal.add_component(late_event)
+                stats['tareas'] += 1
 
         stats['total'] = stats['controles'] + stats['tareas']
 
