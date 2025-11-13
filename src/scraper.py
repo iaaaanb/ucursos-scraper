@@ -418,6 +418,12 @@ def scrape_novedades_page(driver, post_offset=0):
                     if not href:
                         continue
 
+                    # Skip external links (different servers/domains)
+                    # Only process internal U-Cursos files (relative URLs or same domain)
+                    if href.startswith('http://') or href.startswith('https://'):
+                        # External URL - skip it
+                        continue
+
                     # Check if it's a file download link
                     is_pdf = '.pdf' in href.lower() or (data_name and data_name.lower().endswith('.pdf'))
                     is_zip = '.zip' in href.lower() or (data_name and data_name.lower().endswith('.zip'))
