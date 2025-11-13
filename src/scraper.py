@@ -293,7 +293,13 @@ def scrape_material_docente(driver, course, output_dir=None):
         for separator in separator_rows:
             # Get section name from data-categoria attribute
             section_name = separator.get_attribute('data-categoria')
-            if section_name and section_name not in sections:
+
+            # If empty or None, use "Otros" as default
+            if not section_name or section_name.strip() == "":
+                section_name = "Otros"
+
+            # Add to sections list if not already present
+            if section_name not in sections:
                 sections.append(section_name)
 
         # If no sections found via data-categoria, try extracting from td text
@@ -301,7 +307,13 @@ def scrape_material_docente(driver, course, output_dir=None):
             separator_rows = driver.find_elements(By.CSS_SELECTOR, 'tr.separador td.sort')
             for separator_td in separator_rows:
                 section_name = separator_td.text.strip()
-                if section_name and section_name not in sections:
+
+                # If empty text, use "Otros"
+                if not section_name or section_name == "":
+                    section_name = "Otros"
+
+                # Add to sections list if not already present
+                if section_name not in sections:
                     sections.append(section_name)
 
         # Create folders if output_dir provided
