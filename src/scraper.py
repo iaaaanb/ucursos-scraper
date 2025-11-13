@@ -418,6 +418,12 @@ def scrape_novedades_page(driver, post_offset=0):
                     if not href:
                         continue
 
+                    # Skip external links (different servers/domains)
+                    # Only process internal U-Cursos files (relative URLs or same domain)
+                    if href.startswith('http://') or href.startswith('https://'):
+                        # External URL - skip it
+                        continue
+
                     # Check if it's a file download link
                     is_pdf = '.pdf' in href.lower() or (data_name and data_name.lower().endswith('.pdf'))
                     is_zip = '.zip' in href.lower() or (data_name and data_name.lower().endswith('.zip'))
@@ -772,7 +778,7 @@ def wait_for_download(download_dir, timeout=30):
 def download_file(driver, file_info, output_path, download_dir):
     """
     Download a single file from U-Cursos.
-    Handles lightbox PDFs by using direct HTTP download with session cookies.
+    Handles lightbox PDFs and external links by using direct HTTP download.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
@@ -794,26 +800,35 @@ def download_file(driver, file_info, output_path, download_dir):
         # Check if this is a lightbox PDF (needs special handling)
         is_lightbox = file_info.get('is_lightbox', False)
 
-        if is_lightbox:
-            # For lightbox PDFs, use requests with driver's cookies to download directly
+        # Check if this is an external URL (different domain)
+        file_url = file_info['url']
+        is_external = file_url.startswith('http://') or file_url.startswith('https://')
+
+        # For external URLs or lightbox PDFs, use requests library
+        if is_lightbox or is_external:
             import requests
 
-            # Get cookies from Selenium driver
-            cookies = driver.get_cookies()
-            session = requests.Session()
-            for cookie in cookies:
-                session.cookies.set(cookie['name'], cookie['value'])
-
             # Get the absolute URL
-            file_url = file_info['url']
             if not file_url.startswith('http'):
                 # Relative URL - make it absolute
                 current_url = driver.current_url
                 from urllib.parse import urljoin
                 file_url = urljoin(current_url, file_url)
 
-            # Download the file using requests
-            response = session.get(file_url, stream=True)
+            # For lightbox PDFs (internal U-Cursos), use session cookies
+            if is_lightbox and not is_external:
+                # Get cookies from Selenium driver
+                cookies = driver.get_cookies()
+                session = requests.Session()
+                for cookie in cookies:
+                    session.cookies.set(cookie['name'], cookie['value'])
+
+                # Download the file using requests with authentication
+                response = session.get(file_url, stream=True)
+            else:
+                # For external URLs, no authentication needed
+                response = requests.get(file_url, stream=True, timeout=30)
+
             response.raise_for_status()
 
             # Write directly to output file
@@ -825,7 +840,7 @@ def download_file(driver, file_info, output_path, download_dir):
             return True
 
         else:
-            # For non-lightbox files, use regular Selenium download
+            # For internal non-lightbox files, use regular Selenium download
             # Clear download directory before download
             download_path = Path(download_dir)
             for file in download_path.glob('*'):
