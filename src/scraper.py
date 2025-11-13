@@ -382,24 +382,144 @@ def scrape_material_docente(driver, course, output_dir=None):
         return []
 
 
-def scrape_novedades(driver, course):
+def scrape_novedades(driver, course, output_dir=None):
     """
-    Scrape PDF attachments from Novedades (announcements) section.
-    Only extracts PDF files, ignores announcement text.
+    Scrape PDF and ZIP attachments from Novedades (announcements) section.
+    Creates folder structure: Course/Cátedras/<post_name>/[files]
+    Both PDF and ZIP files from the same post go in the same folder.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
         course (dict): Course dictionary
+        output_dir (str, optional): Output directory for folder creation
 
     Returns:
-        list: List of PDF file dictionaries with 'name', 'url', 'category'
+        list: List of file dictionaries with 'name', 'url', 'category', 'subfolder'
     """
-    print(f'   📰 Scraping Novedades (PDFs only) for {course["code"]}...')
+    print(f'   📰 Scraping Novedades (PDFs and ZIPs) for {course["code"]}...')
 
-    # TODO: Implement novedades PDF scraping
-    # Extract only PDF attachments from announcements, ignore text content
+    all_files = []
+    sections = []
 
-    return []
+    try:
+        # Find all post elements
+        posts = driver.find_elements(By.CSS_SELECTOR, 'div.post.objeto')
+        print(f'   🔍 Found {len(posts)} post(s) in Novedades')
+
+        if not posts:
+            print(f'   ℹ️  No posts found in Novedades')
+            return []
+
+        for idx, post in enumerate(posts):
+            try:
+                # Extract post title (try multiple selectors)
+                post_title = None
+                try:
+                    # Try finding title in h1, h2, or h3 elements
+                    title_elem = post.find_element(By.CSS_SELECTOR, 'h1, h2, h3')
+                    post_title = title_elem.text.strip()
+                except NoSuchElementException:
+                    # Fallback: try to get from any text content
+                    try:
+                        # Look for a link or strong text that might be the title
+                        title_elem = post.find_element(By.CSS_SELECTOR, 'strong, b, a')
+                        post_title = title_elem.text.strip()
+                    except:
+                        # Last resort: use a generic name
+                        post_title = f'Post_{idx + 1}'
+
+                # Sanitize post title for use as folder name
+                post_folder = sanitize_filename(post_title) if post_title else f'Post_{idx + 1}'
+
+                # Find all download links in the post
+                download_links = post.find_elements(By.CSS_SELECTOR, 'a[href]')
+
+                pdf_links = []
+                zip_links = []
+
+                for link in download_links:
+                    href = link.get_attribute('href')
+                    if not href:
+                        continue
+
+                    # Check if link is for PDF or ZIP
+                    if '.pdf' in href.lower() or 'pdf' in href.lower():
+                        pdf_links.append(link)
+                    elif '.zip' in href.lower() or 'zip' in href.lower():
+                        zip_links.append(link)
+
+                # Process PDF files
+                for pdf_link in pdf_links:
+                    try:
+                        href = pdf_link.get_attribute('href')
+                        # Try to get filename from link text or use generic name
+                        link_text = pdf_link.text.strip()
+                        filename = link_text if link_text else 'document.pdf'
+
+                        # Ensure filename has .pdf extension
+                        if not filename.lower().endswith('.pdf'):
+                            filename += '.pdf'
+
+                        all_files.append({
+                            'name': filename,
+                            'url': href,
+                            'category': 'Cátedras',
+                            'subfolder': post_folder,
+                            'size': 'unknown'
+                        })
+                        print(f'      📄 Found PDF: {filename} in {post_folder}')
+
+                    except Exception as e:
+                        print(f'      ⚠️  Error processing PDF link: {e}')
+                        continue
+
+                # Process ZIP files
+                for zip_link in zip_links:
+                    try:
+                        href = zip_link.get_attribute('href')
+                        # Try to get filename from link text or use generic name
+                        link_text = zip_link.text.strip()
+                        filename = link_text if link_text else 'archive.zip'
+
+                        # Ensure filename has .zip extension
+                        if not filename.lower().endswith('.zip'):
+                            filename += '.zip'
+
+                        all_files.append({
+                            'name': filename,
+                            'url': href,
+                            'category': 'Cátedras',
+                            'subfolder': post_folder,
+                            'size': 'unknown'
+                        })
+                        print(f'      📦 Found ZIP: {filename} in {post_folder}')
+
+                    except Exception as e:
+                        print(f'      ⚠️  Error processing ZIP link: {e}')
+                        continue
+
+            except Exception as e:
+                print(f'      ⚠️  Error processing post {idx + 1}: {e}')
+                continue
+
+        # Ensure folders are created if output_dir provided
+        if output_dir and all_files:
+            # Create the main "Cátedras" folder
+            if "Cátedras" not in sections:
+                sections.append("Cátedras")
+                stats = ensure_folders_exist(course, sections, output_dir)
+
+        print(f'   ✅ Found {len(all_files)} file(s) in Novedades')
+        return all_files
+
+    except NoSuchElementException:
+        print(f'   ℹ️  No posts found in Novedades section')
+        return []
+    except Exception as e:
+        print(f'   ❌ Error scraping Novedades: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 def scrape_tareas(driver, course):
@@ -463,7 +583,7 @@ def scrape_course_sections(driver, course, sections=None, output_dir=None):
             elif section_name == 'material_docente':
                 results['material_docente'] = scrape_material_docente(driver, course, output_dir)
             elif section_name == 'novedades':
-                results['novedades'] = scrape_novedades(driver, course)
+                results['novedades'] = scrape_novedades(driver, course, output_dir)
             elif section_name == 'tareas':
                 results['tareas'] = scrape_tareas(driver, course)
 
@@ -674,11 +794,18 @@ def download_files(driver, output_dir, course_filter=None):
                     # Get smart course folder name
                     course_folder_name = get_course_folder_name(course, output_dir)
 
-                    # Organize: output_dir/Course/Category/file.pdf
+                    # Organize files by category and optional subfolder
                     category = sanitize_filename(file_info.get('category', 'Otros'))
                     filename = sanitize_filename(file_info['name'])
 
-                    file_path = output_path / course_folder_name / category / filename
+                    # Check if file has a subfolder (for nested organization like Novedades)
+                    if 'subfolder' in file_info and file_info['subfolder']:
+                        # Structure: output_dir/Course/Category/Subfolder/file.pdf
+                        subfolder = sanitize_filename(file_info['subfolder'])
+                        file_path = output_path / course_folder_name / category / subfolder / filename
+                    else:
+                        # Structure: output_dir/Course/Category/file.pdf
+                        file_path = output_path / course_folder_name / category / filename
 
                     # Check if file already exists
                     if file_path.exists():
