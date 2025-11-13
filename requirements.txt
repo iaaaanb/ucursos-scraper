@@ -1,0 +1,11 @@
+# Core dependencies
+selenium>=4.15.0
+icalendar>=5.0.11
+click>=8.1.7
+
+# Environment and configuration
+python-dotenv>=1.0.0
+
+# Optional: Progress bars and logging
+tqdm>=4.66.0
+colorama>=0.4.6
