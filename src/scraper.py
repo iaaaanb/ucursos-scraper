@@ -629,10 +629,10 @@ def scrape_novedades(driver, course, output_dir=None):
         return []
 
 
-def scrape_tareas(driver, course):
+def get_tarea_events(driver, course):
     """
-    Scrape assignment deadlines from Tareas (assignments) section.
-    Extracts deadline information for calendar event creation.
+    Extract assignment deadline information from Tareas section for calendar export.
+    This function only extracts event metadata (deadlines, states) without downloading files.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
@@ -641,7 +641,7 @@ def scrape_tareas(driver, course):
     Returns:
         list: List of event dictionaries with deadline information
     """
-    print(f'   📝 Scraping Tareas deadlines for {course["code"]}...')
+    print(f'   📝 Extracting Tarea events for {course["code"]}...')
 
     events = []
 
@@ -759,6 +759,157 @@ def scrape_tareas(driver, course):
         return []
 
 
+def scrape_tareas(driver, course, output_dir=None):
+    """
+    Scrape files from Tareas (assignments) section.
+    Navigates to each tarea's individual page and extracts files from the "Descripción" section.
+
+    Args:
+        driver (WebDriver): Authenticated WebDriver instance
+        course (dict): Course dictionary
+        output_dir (str, optional): Output directory for folder creation
+
+    Returns:
+        list: List of file dictionaries with 'name', 'url', 'category', 'subfolder'
+    """
+    print(f'   📝 Scraping Tareas files for {course["code"]}...')
+
+    all_files = []
+
+    try:
+        # Find the tareas table
+        table = driver.find_element(By.CSS_SELECTOR, 'table')
+
+        # Find all tbody elements
+        tbody_elements = table.find_elements(By.TAG_NAME, 'tbody')
+
+        current_category = None
+        tarea_count = 0
+
+        for tbody in tbody_elements:
+            # Check if this tbody contains a separator row
+            separator_rows = tbody.find_elements(By.CSS_SELECTOR, 'tr.separador[data-categoria]')
+
+            if separator_rows:
+                # This is a separator - update current category
+                separator = separator_rows[0]
+                category_name = separator.get_attribute('data-categoria')
+
+                if not category_name or category_name.strip() == "":
+                    category_name = "Tareas"
+
+                current_category = category_name
+                continue
+
+            # This tbody contains tarea rows - extract files from each
+            tarea_rows = tbody.find_elements(By.CSS_SELECTOR, 'tr')
+
+            for row in tarea_rows:
+                try:
+                    # Extract title and URL from h1 > a
+                    title_elem = row.find_element(By.CSS_SELECTOR, 'td.string h1 a')
+                    tarea_title = title_elem.text.strip()
+                    tarea_url = title_elem.get_attribute('href')
+
+                    # Navigate to the tarea's page
+                    driver.get(tarea_url)
+                    time.sleep(1)  # Wait for page to load
+
+                    # Look for the table with id="tarea"
+                    try:
+                        tarea_table = driver.find_element(By.CSS_SELECTOR, 'table#tarea')
+
+                        # Find the "Descripción" row
+                        desc_rows = tarea_table.find_elements(By.TAG_NAME, 'tr')
+
+                        for desc_row in desc_rows:
+                            try:
+                                th_elem = desc_row.find_element(By.TAG_NAME, 'th')
+                                if 'Descripción' in th_elem.text or 'Descripcion' in th_elem.text:
+                                    # This is the description row - extract all file links
+                                    td_elem = desc_row.find_element(By.TAG_NAME, 'td')
+                                    file_links = td_elem.find_elements(By.CSS_SELECTOR, 'a.file[data-name]')
+
+                                    for file_link in file_links:
+                                        try:
+                                            # Extract file information
+                                            filename = file_link.get_attribute('data-name')
+                                            file_url = file_link.get_attribute('href')
+
+                                            # Check if it's a lightbox link
+                                            is_lightbox = 'lightbox' in file_link.get_attribute('class')
+
+                                            # Skip external links
+                                            if file_url.startswith('http://') or file_url.startswith('https://'):
+                                                print(f'      ⏭️  Skipping external link: {filename}')
+                                                continue
+
+                                            # Extract file size from link text (e.g., "EP5.txt (4.1 kb)")
+                                            link_text = file_link.text.strip()
+                                            file_size = "unknown size"
+                                            if '(' in link_text and ')' in link_text:
+                                                file_size = link_text[link_text.find('(')+1:link_text.find(')')]
+
+                                            # Use current category or "Tareas" as default
+                                            category = current_category if current_category else "Tareas"
+
+                                            # Add file to list with subfolder (tarea name)
+                                            all_files.append({
+                                                'name': filename,
+                                                'url': file_url,
+                                                'category': category,
+                                                'subfolder': tarea_title.replace(' ', '-'),  # Sanitize will happen later
+                                                'size': file_size,
+                                                'is_lightbox': is_lightbox
+                                            })
+
+                                            print(f'      📎 Found file: {filename} in "{tarea_title}"')
+
+                                        except Exception as e:
+                                            print(f'      ⚠️  Error extracting file link: {e}')
+                                            continue
+
+                                    break  # Found descripción row, no need to check other rows
+                            except NoSuchElementException:
+                                # This row doesn't have a th element, skip it
+                                continue
+
+                    except NoSuchElementException:
+                        # No tarea table found on this page (maybe no files)
+                        pass
+
+                    # Navigate back to the tareas list page
+                    driver.back()
+                    time.sleep(1)  # Wait for page to load
+
+                    tarea_count += 1
+
+                except NoSuchElementException:
+                    # Skip rows that don't have the expected structure
+                    continue
+                except Exception as e:
+                    print(f'      ⚠️  Error processing tarea: {e}')
+                    # Try to navigate back if we're on a tarea page
+                    try:
+                        driver.back()
+                        time.sleep(1)
+                    except:
+                        pass
+                    continue
+
+        print(f'   ✅ Processed {tarea_count} tarea(s), found {len(all_files)} file(s)')
+        return all_files
+
+    except NoSuchElementException:
+        print(f'   ⚠️  No tareas table found')
+        return []
+    except Exception as e:
+        print(f'   ❌ Error scraping Tareas files: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        return []
+
+
 def scrape_course_sections(driver, course, sections=None, output_dir=None):
     """
     Scrape multiple sections for a course.
@@ -800,7 +951,7 @@ def scrape_course_sections(driver, course, sections=None, output_dir=None):
             elif section_name == 'novedades':
                 results['novedades'] = scrape_novedades(driver, course, output_dir)
             elif section_name == 'tareas':
-                results['tareas'] = scrape_tareas(driver, course)
+                results['tareas'] = scrape_tareas(driver, course, output_dir)
 
         except Exception as e:
             print(f'   ⚠️  Error scraping {section_name}: {str(e)}')
