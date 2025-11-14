@@ -759,10 +759,68 @@ def get_tarea_events(driver, course):
         return []
 
 
+def get_existing_tareas_from_calendar(output_dir, course_code):
+    """
+    Load existing tareas from calendar file to skip already-processed ones.
+
+    Args:
+        output_dir (str): Output directory where calendar.ics is stored
+        course_code (str): Course code to filter tareas
+
+    Returns:
+        set: Set of tarea titles already in calendar for this course
+    """
+    existing_tareas = set()
+
+    if not output_dir:
+        return existing_tareas
+
+    calendar_path = Path(output_dir) / 'calendar.ics'
+
+    if not calendar_path.exists():
+        return existing_tareas
+
+    try:
+        from icalendar import Calendar
+
+        with open(calendar_path, 'rb') as f:
+            cal = Calendar.from_ical(f.read())
+
+        # Extract tarea titles from calendar events
+        for component in cal.walk():
+            if component.name == "VEVENT":
+                uid = str(component.get('uid', ''))
+                # Check if this is a tarea event (UID starts with "tarea-")
+                if uid.startswith(f'tarea-{course_code}-'):
+                    summary = str(component.get('summary', ''))
+                    # Extract tarea title from summary (format: "[Course] Tarea Name [✓/✗]")
+                    # Remove course prefix, submission status, and " - Atraso" suffix
+                    if summary.startswith('['):
+                        # Remove "[COURSE] " prefix
+                        summary = summary.split('] ', 1)[1] if '] ' in summary else summary
+                    # Remove submission status indicators
+                    summary = summary.replace(' ✓', '').replace(' ✗', '')
+                    # Remove " - Atraso" suffix (for late deadline events)
+                    summary = summary.replace(' - Atraso', '')
+
+                    existing_tareas.add(summary.strip())
+
+        if existing_tareas:
+            print(f'   📅 Found {len(existing_tareas)} tarea(s) already in calendar, will skip those')
+
+    except Exception as e:
+        # If calendar can't be loaded, just continue without optimization
+        print(f'   ⚠️  Could not load calendar for optimization: {e}')
+        pass
+
+    return existing_tareas
+
+
 def scrape_tareas(driver, course, output_dir=None):
     """
     Scrape files from Tareas (assignments) section.
     Navigates to each tarea's individual page and extracts files from the "Descripción" section.
+    Skips tareas already in calendar to avoid redundant processing.
 
     Args:
         driver (WebDriver): Authenticated WebDriver instance
@@ -777,6 +835,9 @@ def scrape_tareas(driver, course, output_dir=None):
     all_files = []
 
     try:
+        # Load existing tareas from calendar to skip them (optimization)
+        existing_tareas = get_existing_tareas_from_calendar(output_dir, course['code'])
+
         # Store the tareas list URL for reliable navigation back
         tareas_list_url = driver.current_url
 
@@ -831,8 +892,15 @@ def scrape_tareas(driver, course, output_dir=None):
         print(f'   📋 Found {len(tareas_to_process)} tarea(s) to process')
 
         # SECOND PASS: Navigate to each tarea and extract files
+        skipped_count = 0
         for idx, tarea_info in enumerate(tareas_to_process):
             try:
+                # Skip if this tarea is already in calendar (optimization)
+                if tarea_info['title'] in existing_tareas:
+                    print(f'      [{idx + 1}/{len(tareas_to_process)}] ⏭️  Skipping (in calendar): {tarea_info["title"]}')
+                    skipped_count += 1
+                    continue
+
                 print(f'      [{idx + 1}/{len(tareas_to_process)}] Processing: {tarea_info["title"]}')
 
                 # Navigate to the tarea's page
@@ -920,7 +988,12 @@ def scrape_tareas(driver, course, output_dir=None):
                     break
                 continue
 
-        print(f'   ✅ Processed {len(tareas_to_process)} tarea(s), found {len(all_files)} file(s)')
+        # Summary
+        processed_count = len(tareas_to_process) - skipped_count
+        if skipped_count > 0:
+            print(f'   ✅ Processed {processed_count} tarea(s), skipped {skipped_count} (in calendar), found {len(all_files)} file(s)')
+        else:
+            print(f'   ✅ Processed {processed_count} tarea(s), found {len(all_files)} file(s)')
         return all_files
 
     except NoSuchElementException:
