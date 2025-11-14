@@ -1,0 +1,25 @@
+# Include documentation
+include README.md
+include LICENSE
+
+# Include configuration files
+include .env.example
+include requirements.txt
+include config.py
+
+# Include the wrapper scripts
+include ucursito
+include ucursito_wrapper.py
+
+# Include setup files
+include setup.py
+
+# Include all Python files in src/
+recursive-include src *.py
+
+# Exclude unnecessary files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .DS_Store

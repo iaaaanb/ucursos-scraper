@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ucursito"
+dynamic = ["version"]
+description = "U-Cursos scraper and calendar exporter"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+keywords = ["ucursos", "scraper", "calendar", "ics", "universidad", "chile"]
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "Topic :: Education",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+]
+
+dependencies = [
+    "selenium>=4.15.0",
+    "icalendar>=5.0.11",
+    "click>=8.1.7",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "tqdm>=4.66.0",
+    "colorama>=0.4.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/iaaaanb/ucursos-scraper"
+"Bug Reports" = "https://github.com/iaaaanb/ucursos-scraper/issues"
+"Source" = "https://github.com/iaaaanb/ucursos-scraper"
+
+[project.scripts]
+ucursito = "ucursito_wrapper:main"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.setuptools.package-data]
+src = ["*.py"]
+
+[tool.setuptools_scm]
+write_to = "src/_version.py"
