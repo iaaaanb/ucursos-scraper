@@ -36,14 +36,83 @@ ucursos-scraper/
 └── README.md                # This file
 ```
 
-## Prerequisites
+## Installation
 
+### Option 1: Install from .deb Package (Recommended)
+
+**For Debian/Ubuntu users**, the easiest way to install ucursito is using the `.deb` package.
+
+#### Prerequisites
+- Debian/Ubuntu-based Linux distribution
+- Python 3.8 or higher
+- Chrome/Chromium browser
+- U-Cursos account credentials
+
+#### Install Steps
+
+1. **Download the package**
+   ```bash
+   # Download from releases or build locally (see "Building from Source" below)
+   wget https://github.com/iaaaanb/ucursos-scraper/releases/download/v0.2.0/ucursito_0.2.0_all.deb
+   ```
+
+2. **Install the package** (apt handles dependencies automatically)
+   ```bash
+   sudo apt install ./ucursito_0.2.0_all.deb
+   ```
+
+3. **Install browser dependencies** (if not already installed)
+   ```bash
+   sudo apt install chromium-browser chromium-chromedriver
+   # OR for Google Chrome:
+   # sudo apt install google-chrome-stable
+   ```
+
+4. **Run ucursito**
+   ```bash
+   ucursito
+   ```
+
+   On first run, you'll be prompted to enter your U-Cursos credentials:
+   ```
+   U-Cursos Username: your_username
+   U-Cursos Password: ********
+   ```
+
+   Credentials are securely stored in `~/.config/ucursito/credentials` with 600 permissions.
+
+#### What Gets Installed
+
+- **Installation location**: `/opt/ucursito/`
+- **Command**: `ucursito` (available system-wide from `/usr/local/bin/`)
+- **Credentials**: Stored in `~/.config/ucursito/credentials`
+- **Downloads**: Default to `./downloads/` in your current directory
+
+#### Uninstall
+
+```bash
+# Remove package
+sudo apt remove ucursito
+
+# Remove package + configuration files
+sudo apt purge ucursito
+
+# Note: User credentials in ~/.config/ucursito/ are preserved
+# To remove them manually:
+rm -rf ~/.config/ucursito/
+```
+
+### Option 2: Install from Source (Development)
+
+**For developers** or users who want to run from source without installing system-wide.
+
+#### Prerequisites
 - Python 3.8 or higher
 - Chrome/Chromium browser installed
 - ChromeDriver (automatically managed by Selenium)
 - U-Cursos account credentials
 
-## Installation
+#### Install Steps
 
 1. **Clone the repository**
 
@@ -380,6 +449,123 @@ Before running on real data:
 3. Check calendar export format
 4. Ensure environment variables are properly loaded
 5. Test with `--no-headless` to visually verify scraping behavior
+
+### Building the .deb Package
+
+**For developers** who want to build the Debian package from source.
+
+#### Prerequisites for Building
+
+- Debian/Ubuntu-based Linux distribution
+- `dpkg-deb` installed (usually pre-installed)
+- All project dependencies installed
+
+#### Build Steps
+
+1. **Clone the repository** (if not already done)
+   ```bash
+   git clone https://github.com/iaaaanb/ucursos-scraper.git
+   cd ucursos-scraper
+   ```
+
+2. **Run the build script**
+   ```bash
+   ./build-deb.sh
+   ```
+
+   This script will:
+   - Create the `debian/` directory structure
+   - Copy all application files to `/opt/ucursito/`
+   - Copy DEBIAN control files (control, postinst, prerm)
+   - Clean up Python cache files
+   - Build the package with `dpkg-deb`
+   - Clean up build artifacts
+
+3. **Verify the package**
+   ```bash
+   # The package is created: ucursito_0.2.0_all.deb
+   ls -lh ucursito_0.2.0_all.deb
+
+   # Inspect package contents
+   dpkg -c ucursito_0.2.0_all.deb
+
+   # Show package information
+   dpkg -I ucursito_0.2.0_all.deb
+   ```
+
+4. **Test the package**
+   ```bash
+   # Install locally
+   sudo apt install ./ucursito_0.2.0_all.deb
+
+   # Test the command
+   ucursito --help
+
+   # Remove for cleanup
+   sudo apt remove ucursito
+   ```
+
+#### Build Output
+
+The build script creates:
+- `ucursito_0.2.0_all.deb` - The installable Debian package (~26KB)
+
+#### Package Structure
+
+The `.deb` package contains:
+
+```
+/opt/ucursito/
+├── src/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── auth.py
+│   ├── scraper.py
+│   ├── calendar_export.py
+│   └── calendar_server.py
+├── config.py
+├── requirements.txt
+├── .env.example
+├── README.md
+└── ucursito (wrapper script)
+
+/usr/local/bin/ucursito → /opt/ucursito/ucursito (symlink)
+```
+
+#### Customizing the Build
+
+To modify the package:
+
+1. **Edit package metadata**: `debian-template/DEBIAN/control`
+   - Change version, dependencies, description, etc.
+
+2. **Edit post-installation script**: `debian-template/DEBIAN/postinst`
+   - Modify what happens after installation
+
+3. **Edit pre-removal script**: `debian-template/DEBIAN/prerm`
+   - Modify cleanup behavior before removal
+
+4. **Edit build script**: `build-deb.sh`
+   - Change build process, file locations, etc.
+
+After modifications, run `./build-deb.sh` to rebuild the package.
+
+#### Distribution
+
+Once built, you can distribute the `.deb` file:
+
+```bash
+# Upload to GitHub releases
+gh release create v0.2.0 ucursito_0.2.0_all.deb
+
+# Or share directly
+scp ucursito_0.2.0_all.deb user@server:/path/
+```
+
+Users can then install with:
+```bash
+sudo apt install ./ucursito_0.2.0_all.deb
+```
 
 ## Security
 

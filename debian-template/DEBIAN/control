@@ -1,0 +1,23 @@
+Package: ucursito
+Version: 0.2.0
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.8), python3-venv, python3-pip, chromium-browser | google-chrome-stable, chromium-chromedriver | google-chrome-stable
+Recommends: python3-selenium, python3-icalendar, python3-click, python3-requests
+Maintainer: Your Name <your.email@example.com>
+Homepage: https://github.com/iaaaanb/ucursos-scraper
+Description: U-Cursos scraper and calendar exporter
+ Ucursito is a command-line tool to scrape and organize content from the
+ U-Cursos university portal.
+ .
+ Features:
+  - Download files from Material Docente, Novedades, and Tareas sections
+  - Export calendar events (Controls and Tarea deadlines) to ICS format
+  - Serve calendar via HTTP for live subscription in calendar apps
+  - Automatic credential management with first-time setup
+  - Smart file organization with course abbreviations
+  - Selective section scraping with CLI flags
+ .
+ The package installs to /opt/ucursito and creates a 'ucursito' command
+ that can be run from anywhere.

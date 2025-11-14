@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""
+Ucursito - U-Cursos Scraper Wrapper
+Handles credential management and runs the scraper.
+"""
+
+import os
+import sys
+import subprocess
+from pathlib import Path
+import getpass
+
+
+def get_config_dir():
+    """Get the configuration directory for ucursito."""
+    config_dir = Path.home() / '.config' / 'ucursito'
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+
+def get_credentials_file():
+    """Get the path to the credentials file."""
+    return get_config_dir() / 'credentials'
+
+
+def load_credentials():
+    """
+    Load credentials from the config file.
+
+    Returns:
+        tuple: (username, password) or (None, None) if not found
+    """
+    creds_file = get_credentials_file()
+
+    if not creds_file.exists():
+        return None, None
+
+    try:
+        with open(creds_file, 'r') as f:
+            lines = f.readlines()
+            if len(lines) >= 2:
+                username = lines[0].strip()
+                password = lines[1].strip()
+                return username, password
+    except Exception as e:
+        print(f'⚠️  Error reading credentials: {e}')
+        return None, None
+
+    return None, None
+
+
+def save_credentials(username, password):
+    """
+    Save credentials to the config file.
+
+    Args:
+        username (str): U-Cursos username
+        password (str): U-Cursos password
+    """
+    creds_file = get_credentials_file()
+
+    try:
+        # Write credentials to file with secure permissions
+        with open(creds_file, 'w') as f:
+            f.write(f'{username}\n')
+            f.write(f'{password}\n')
+
+        # Set file permissions to 600 (read/write for owner only)
+        os.chmod(creds_file, 0o600)
+
+        print(f'✅ Credentials saved to {creds_file}')
+        print(f'   (File permissions: 600 - owner read/write only)')
+
+    except Exception as e:
+        print(f'❌ Error saving credentials: {e}')
+        sys.exit(1)
+
+
+def setup_credentials():
+    """
+    Interactive setup for first-time users.
+    Prompts for username and password and saves them.
+    """
+    print('━' * 70)
+    print('🎉 Welcome to Ucursito!')
+    print('━' * 70)
+    print()
+    print('First-time setup: Please enter your U-Cursos credentials.')
+    print('These will be stored securely in:', get_credentials_file())
+    print()
+
+    # Prompt for username
+    username = input('U-Cursos Username: ').strip()
+
+    if not username:
+        print('❌ Username cannot be empty')
+        sys.exit(1)
+
+    # Prompt for password (hidden input)
+    password = getpass.getpass('U-Cursos Password: ')
+
+    if not password:
+        print('❌ Password cannot be empty')
+        sys.exit(1)
+
+    # Confirm
+    print()
+    print(f'Username: {username}')
+    confirm = input('Save these credentials? (y/n): ').strip().lower()
+
+    if confirm != 'y':
+        print('❌ Setup cancelled')
+        sys.exit(1)
+
+    # Save credentials
+    save_credentials(username, password)
+
+    print()
+    print('━' * 70)
+    print('✅ Setup complete! Running ucursito...')
+    print('━' * 70)
+    print()
+
+    return username, password
+
+
+def main():
+    """Main entry point for ucursito wrapper."""
+
+    # Check for --reset-credentials flag
+    if '--reset-credentials' in sys.argv:
+        print('🔄 Resetting credentials...')
+        print()
+        username, password = setup_credentials()
+        # Remove the flag before passing to scraper
+        sys.argv.remove('--reset-credentials')
+        # If that was the only argument, exit after setup
+        if len(sys.argv) == 1:
+            print('✅ Credentials reset successfully!')
+            sys.exit(0)
+    else:
+        # Load existing credentials
+        username, password = load_credentials()
+
+        # If no credentials, run first-time setup
+        if not username or not password:
+            username, password = setup_credentials()
+
+    # Find the actual scraper script
+    # When installed via .deb, it will be in /opt/ucursito/src/main.py
+    script_locations = [
+        Path('/opt/ucursito/src/main.py'),  # Installed location
+        Path(__file__).parent.parent / 'src' / 'main.py',  # Development location
+    ]
+
+    scraper_script = None
+    for location in script_locations:
+        if location.exists():
+            scraper_script = location
+            break
+
+    if not scraper_script:
+        print('❌ Error: Could not find ucursito scraper script')
+        print('   Expected locations:')
+        for loc in script_locations:
+            print(f'   - {loc}')
+        sys.exit(1)
+
+    # Set environment variables for the scraper
+    env = os.environ.copy()
+    env['UCURSOS_USERNAME'] = username
+    env['UCURSOS_PASSWORD'] = password
+    env['UCURSOS_URL'] = 'https://www.u-cursos.cl'
+
+    # Pass all command-line arguments to the scraper
+    # sys.argv[0] is 'ucursito', we want to pass argv[1:] to the scraper
+    cmd = [sys.executable, str(scraper_script)] + sys.argv[1:]
+
+    try:
+        # Run the scraper with the credentials
+        result = subprocess.run(cmd, env=env)
+        sys.exit(result.returncode)
+
+    except KeyboardInterrupt:
+        print('\n\n🛑 Interrupted by user')
+        sys.exit(130)
+    except Exception as e:
+        print(f'❌ Error running ucursito: {e}')
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
