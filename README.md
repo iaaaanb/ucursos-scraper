@@ -8,11 +8,14 @@ A Python CLI tool to scrape and organize content from the U-Cursos university po
 - **Download files** organized by course and category:
   - Material Docente (teaching materials)
   - Novedades (announcements with pagination support)
-  - Tareas (assignments - coming soon)
-- **Export calendar** with Control events to ICS format
+- **Export calendar** with Control events and Tarea deadlines to ICS format
+  - Includes main deadlines and late submission deadlines ("Atrasos")
+  - Shows submission status (✓ entregada, ✗ sin entrega, pending)
 - **Selective scraping** with section-specific flags (-c, -m, -n, -t)
 - **Smart folder naming** with course abbreviations
 - **Nested folder structure** for announcements (PDF/ZIP files)
+- **External link filtering** - automatically skips external PDFs/files
+- **Lightbox download handling** - bypasses JavaScript viewers for direct downloads
 - **Environment-based configuration** for secure credential management
 
 ## Project Structure
@@ -24,7 +27,7 @@ ucursos-scraper/
 │   ├── auth.py              # Authentication logic
 │   ├── scraper.py           # File download functionality
 │   └── calendar_export.py   # Calendar export to ICS
-├── config/                  # Configuration files (optional)
+├── config.py                # Configuration and course abbreviations
 ├── downloads/               # Downloaded files (auto-created)
 ├── .env                     # Your credentials (DO NOT COMMIT)
 ├── .env.example             # Credentials template
@@ -36,7 +39,8 @@ ucursos-scraper/
 ## Prerequisites
 
 - Python 3.8 or higher
-- Firefox browser installed (default) or Chrome
+- Chrome/Chromium browser installed
+- ChromeDriver (automatically managed by Selenium)
 - U-Cursos account credentials
 
 ## Installation
@@ -44,6 +48,7 @@ ucursos-scraper/
 1. **Clone the repository**
 
 ```bash
+git clone https://github.com/iaaaanb/ucursos-scraper.git
 cd ucursos-scraper
 ```
 
@@ -73,7 +78,7 @@ UCURSOS_USERNAME=your_username
 UCURSOS_PASSWORD=your_password
 UCURSOS_URL=https://www.u-cursos.cl
 DOWNLOAD_PATH=./downloads
-BROWSER=firefox
+BROWSER=chromium
 HEADLESS=true
 ```
 
@@ -83,11 +88,10 @@ HEADLESS=true
 
 ### Run the CLI
 
-All commands are run from the `src/` directory:
+All commands are run from the project root directory:
 
 ```bash
-cd src
-python main.py [OPTIONS]
+python src/main.py [OPTIONS]
 ```
 
 Or make it executable:
@@ -99,72 +103,78 @@ chmod +x src/main.py
 
 ### Section Flags
 
-By default, the scraper downloads all sections. Use flags to selectively scrape specific sections:
+By default, the scraper syncs all sections. Use flags to selectively scrape specific sections:
 
-- `-c, --calendario`: Scrape calendario section and export ICS file
+- `-c, --calendario`: Export calendario section to ICS file (Control events and Tarea deadlines)
 - `-m, --material`: Scrape material docente files
 - `-n, --novedades`: Scrape novedades (announcements) files
-- `-t, --tareas`: Scrape tareas (assignments) files
+- `-t, --tareas`: Scrape tareas section (currently exports deadlines to calendar)
 
-**Flags can be combined!** For example, `-mt` scrapes both material docente and tareas.
+**Flags can be combined!** For example:
+- `-mt` scrapes both material docente and tareas
+- `-mn` scrapes material docente and novedades
+- `-ct` exports calendar with both controls and tarea deadlines
 
 ### Common Options
 
 - `--headless/--no-headless`: Run browser in headless mode (default: headless)
 - `--output`, `-o`: Output directory path (default: `./downloads`)
 - `--course`: Scrape only a specific course (filters by course name)
+- `--help`: Show help message and available options
+- `--version`: Show version information
 
 ### Examples
 
 #### Full Sync (All Sections)
 Download all files and export calendar:
 ```bash
-python main.py
+python src/main.py
 ```
 
 #### Selective Section Scraping
 ```bash
 # Only material docente
-python main.py -m
+python src/main.py -m
 
 # Material docente + tareas
-python main.py -mt
+python src/main.py -mt
 
 # Novedades only
-python main.py -n
+python src/main.py -n
 
-# Calendar only
-python main.py -c
+# Calendar only (exports both Control events and Tarea deadlines)
+python src/main.py -c
 ```
 
 #### With Course Filter
 ```bash
 # All sections for a specific course
-python main.py --course "Programación"
+python src/main.py --course "Programación"
 
 # Only calendar for a specific course
-python main.py -c --course "Programación"
+python src/main.py -c --course "Programación"
 
 # Material docente + novedades for specific course
-python main.py -mn --course "Cálculo"
+python src/main.py -mn --course "Cálculo"
 ```
 
 #### Custom Output Directory
 ```bash
 # All sections to custom directory
-python main.py --output ~/Documents/UCursos
+python src/main.py --output ~/Documents/UCursos
 
 # Only novedades to custom directory
-python main.py -n --output ./my-files
+python src/main.py -n --output ./my-files
 ```
 
 #### Visible Browser (Non-Headless)
+Useful for debugging or seeing what the scraper is doing:
 ```bash
 # Run with visible browser
-python main.py --no-headless
+python src/main.py --no-headless
 
 # Debug specific section
-python main.py -n --no-headless
+python src/main.py -n --no-headless
 ```
 
 ### Help
@@ -172,7 +182,7 @@ python main.py -n --no-headless
 Get detailed help:
 
 ```bash
-python main.py --help
+python src/main.py --help
 ```
 
 ## File Organization
@@ -188,95 +198,115 @@ downloads/
 │   │   │   └── Lecture_02.pdf
 │   │   └── Category 2/
 │   │       └── Assignment_01.pdf
-│   ├── Cátedras/
-│   │   ├── unix-exec/
-│   │   │   ├── unix-exec.pdf
-│   │   │   └── exec.zip
-│   │   └── unix-varenv/
-│   │       ├── unix-varenv.pdf
-│   │       └── setjmp.zip
-│   └── Tareas/
-│       └── (coming soon)
+│   └── Cátedras/              # Novedades files
+│       ├── unix-exec/
+│       │   ├── unix-exec.pdf
+│       │   └── exec.zip
+│       └── unix-varenv/
+│           ├── unix-varenv.pdf
+│           └── setjmp.zip
 └── Course Name 2/
     └── ...
 ```
 
-**Note:** The scraper uses smart folder naming with course abbreviations when available (configured in `config.py`).
+**Notes:**
+- The scraper uses smart folder naming with course abbreviations when available (configured in `config.py`)
+- Novedades files are organized in nested folders under `Cátedras/`
+- Each announcement's PDF and ZIP files are grouped in a folder named after the PDF filename
+- Spaces in filenames are automatically converted to dashes
 
-## ✅ Implemented Features
+## Calendar Features
 
-### Novedades Section - PDF/ZIP Downloads (Completed)
+### Calendar Export
 
-The Novedades (announcements) section scraper is fully implemented with:
+The scraper exports calendar events to ICS format including:
 
-- ✅ Automatic pagination support - scrapes all pages
-- ✅ PDF and ZIP file detection from `data-name` attributes
-- ✅ Nested folder structure: `downloads/<course>/Cátedras/<pdf_filename>/[files]`
-- ✅ Sequential link processing - if ZIP follows PDF, both go in same folder
-- ✅ Folders named after PDF filenames (without extension)
-- ✅ Proper filename extraction with space-to-dash conversion
-- ✅ Robust error handling for malformed posts
+**Control Events:**
+- Event title: `[Course Abbrev] Control Name`
+- Includes date, time, and location
+- 1-day-before reminder alarm
 
-**Implementation**: `src/scraper.py:scrape_novedades()` and `scrape_novedades_page()`
+**Tarea Deadlines:**
+- Event title: `[Course Abbrev] Tarea Name [✓/✗]`
+  - ✓ = Entregada (submitted)
+  - ✗ = Sin Entrega (not submitted)
+  - No symbol = Pendiente (pending)
+- Main deadline event
+- **Separate "Atraso" event** if late submissions are accepted
+  - Title format: `[Course Abbrev] Tarea Name [✓/✗] - Atraso`
+  - Uses the late submission deadline timestamp
+- Includes state (Finalizada/En Plazo) in description
+- 1-day-before reminder alarm
 
-## 🚧 Pending Implementation
+### Calendar Import
 
-The following features are planned but not yet implemented:
-
-### Tareas Section - Enhanced Scraping
-
-Currently only basic scraping is implemented. The following enhancements are needed:
-
-- **Category grouping**: Apply same separator bar logic as Material Docente section
-- **Deadline tracking**:
-  - Extract primary deadline
-  - Extract optional "Aceptando atrasos hasta:" (accepting late submissions) deadline
-- **State tracking**:
-  - Assignment state: `Finalizada` / `En Plazo`
-  - Submission state: `entregada` / `sin entrega` / `pendiente`
-- **File downloads**: Download attached files from the "descripción" (description) section
-- **Desired structure**: `downloads/<course>/<tarea_name>/` for each assignment's files
-
-**Implementation location**: `src/scraper.py:scrape_tareas()`
-
-## Calendar Import
-
-The generated `.ics` file can be imported into:
+The generated `ucursos_calendar.ics` file can be imported into:
 
 - **Google Calendar**: Settings → Import & Export → Import
 - **Apple Calendar**: File → Import
 - **Outlook**: File → Open & Export → Import/Export
 - **Thunderbird**: Events → Import
 
+**Updating Events:** When you re-sync, the calendar file will update existing events (same UIDs), so you can simply re-import to update deadlines, submission status, or newly added late deadlines.
+
+## Implemented Features
+
+### Material Docente Section ✅
+- File downloads with category organization
+- Separator bar detection for categories
+- Smart filename handling
+
+### Novedades Section ✅
+- Automatic pagination support - scrapes all pages
+- PDF and ZIP file detection from `data-name` attributes
+- Nested folder structure: `downloads/<course>/Cátedras/<pdf_filename>/[files]`
+- Sequential link processing - if ZIP follows PDF, both go in same folder
+- Folders named after PDF filenames (without extension)
+- Proper filename extraction with space-to-dash conversion
+- External link filtering (skips http:// and https:// links)
+- Lightbox PDF handling (bypasses JavaScript viewers)
+
+### Tareas Section ✅
+- Calendar deadline export for main deadlines
+- Late submission deadline tracking ("Aceptando atrasos hasta:")
+- Separate calendar events for late deadlines (with " - Atraso" suffix)
+- Submission state tracking (Entregada ✓ / Sin Entrega ✗ / Pendiente)
+- Assignment state tracking (Finalizada / En Plazo)
+- Category grouping support
+
+### Calendar Export ✅
+- Control events from calendario section
+- Tarea deadline events (main + late deadlines)
+- ICS format compatible with all major calendar applications
+- Unique UIDs for independent event updates
+- Submission status indicators in event titles
+- Pre-deadline reminder alarms
+
+## Pending Features
+
+The following features are planned but not yet implemented:
+
+### Tareas - File Downloads 🚧
+- Download attached files from the "descripción" (description) section of each tarea
+- Organize tarea files in `downloads/<course>/Tareas/<tarea_name>/` folders
+- Handle multiple file attachments per tarea
+
 ## Development
-
-### Current Implementation Status
-
-✅ **Completed:**
-- Authentication system with U-Cursos login
-- Course discovery and listing (Primavera 2025 section)
-- Material Docente scraping with category support
-- Novedades scraping with pagination and nested folders
-- Calendar export (Control events to ICS format)
-- File download system with smart folder naming
-- Selective section scraping with CLI flags
-
-🚧 **In Progress:**
-- Tareas (assignments) enhanced scraping
 
 ### Running in Development Mode
 
 To see browser actions (non-headless):
 
 ```bash
-python main.py --no-headless
+python src/main.py --no-headless
 ```
 
 To debug a specific section:
 
 ```bash
-python main.py -n --no-headless  # Debug novedades only
-python main.py -m --no-headless  # Debug material docente only
+python src/main.py -n --no-headless  # Debug novedades only
+python src/main.py -m --no-headless  # Debug material docente only
+python src/main.py -t --no-headless  # Debug tareas only
 ```
 
 ### Testing
@@ -287,6 +317,7 @@ Before running on real data:
 2. Verify file download paths are correct
 3. Check calendar export format
 4. Ensure environment variables are properly loaded
+5. Test with `--no-headless` to visually verify scraping behavior
 
 ## Security
 
@@ -294,6 +325,7 @@ Before running on real data:
 - `.env` file is in `.gitignore` by default
 - Use strong, unique passwords
 - Consider using application-specific passwords if available
+- The scraper only downloads files from authenticated sessions
 
 ## Troubleshooting
 
@@ -302,7 +334,19 @@ Before running on real data:
 If you get WebDriver errors:
 
 ```bash
-pip install --upgrade selenium webdriver-manager
+pip install --upgrade selenium
+```
+
+Make sure Chrome or Chromium is installed:
+```bash
+# Ubuntu/Debian
+sudo apt-get install chromium-browser chromium-chromedriver
+
+# Arch Linux
+sudo pacman -S chromium
+
+# macOS
+brew install --cask google-chrome
 ```
 
 ### Permission errors
@@ -319,14 +363,52 @@ chmod 755 downloads/
 2. Check if U-Cursos URL is correct
 3. Run with `--no-headless` to see browser actions
 4. Check if login page structure has changed
+5. Ensure you're using your U-Cursos username (not email)
+
+### File download timeouts
+
+If files are timing out:
+- External links (starting with `http://` or `https://`) are automatically skipped
+- Lightbox PDFs are handled with direct HTTP downloads
+- Check your internet connection
+- Try running with `--no-headless` to see what's happening
+
+### Calendar not importing
+
+If the ICS file won't import:
+1. Check the file was created: `ls downloads/ucursos_calendar.ics`
+2. Verify the file isn't empty: `cat downloads/ucursos_calendar.ics`
+3. Try opening with a text editor to check for errors
+4. Some calendar apps require specific file paths - try moving the file to your desktop
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Implement your changes
-4. Test thoroughly
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Implement your changes with clear commit messages
+4. Test thoroughly with `--no-headless` mode
+5. Update documentation if needed
+6. Submit a pull request
+
+## Technical Details
+
+**Web Scraping:**
+- Uses Selenium WebDriver for browser automation
+- Chrome/Chromium browser with automatic driver management
+- Handles both static and dynamic content
+- Bypasses JavaScript lightbox viewers for direct downloads
+
+**File Handling:**
+- Uses `requests` library for authenticated HTTP downloads
+- Selenium session cookies for authenticated file access
+- Automatic folder creation and organization
+- Filename sanitization (spaces to dashes)
+
+**Calendar Generation:**
+- Uses `icalendar` library for ICS format
+- Unique UIDs based on course + event hash
+- Timezone-aware datetime handling
+- Standard alarm components for reminders
 
 ## License
 
@@ -334,4 +416,4 @@ This project is for educational purposes. Respect U-Cursos terms of service and 
 
 ## Disclaimer
 
-This tool is not officially affiliated with U-Cursos or Universidad de Chile. Use at your own risk and responsibility.
+This tool is not officially affiliated with U-Cursos or Universidad de Chile. Use at your own risk and responsibility. Always respect the university's terms of service and download policies.

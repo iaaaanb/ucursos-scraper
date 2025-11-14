@@ -388,14 +388,14 @@ def export_calendar(driver, courses, output_path):
                 print(f'      ⚠️  No calendario table found')
 
             # Extract tarea deadlines from tareas section
-            from scraper import scrape_tareas
+            from scraper import get_tarea_events
             tareas_url = course['url'].rstrip('/') + '/tareas/'
             driver.get(tareas_url)
 
             import time
             time.sleep(1)  # Wait for page to load
 
-            tarea_events = scrape_tareas(driver, course)
+            tarea_events = get_tarea_events(driver, course)
             all_tarea_events.extend(tarea_events)
             print(f'      ✅ Found {len(tarea_events)} Tarea deadline(s)')
 
