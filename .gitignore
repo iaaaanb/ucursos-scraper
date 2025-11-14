@@ -28,6 +28,10 @@ wheels/
 .installed.cfg
 *.egg
 
+# Debian package build artifacts
+debian/
+*.deb
+
 # Virtual environments
 venv/
 ENV/

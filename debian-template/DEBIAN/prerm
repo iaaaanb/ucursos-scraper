@@ -1,0 +1,18 @@
+#!/bin/bash
+set -e
+
+# Pre-removal script for ucursito
+
+echo "Removing Ucursito..."
+
+# Remove the symlink
+if [ -L /usr/local/bin/ucursito ]; then
+    echo "🗑️  Removing symlink /usr/local/bin/ucursito"
+    rm -f /usr/local/bin/ucursito
+fi
+
+# Note: We do NOT remove ~/.config/ucursito/credentials
+# to preserve user credentials for potential reinstallation
+echo "ℹ️  User credentials preserved in ~/.config/ucursito/"
+
+exit 0

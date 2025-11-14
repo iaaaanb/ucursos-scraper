@@ -1,0 +1,58 @@
+#!/bin/bash
+set -e
+
+# Post-installation script for ucursito
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Installing Ucursito - U-Cursos Scraper"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Install Python dependencies
+echo "📦 Installing Python dependencies..."
+if [ -f /opt/ucursito/requirements.txt ]; then
+    pip3 install -r /opt/ucursito/requirements.txt --quiet --disable-pip-version-check || {
+        echo "⚠️  Warning: Some dependencies may not have installed correctly"
+        echo "   You can manually install them with:"
+        echo "   sudo pip3 install -r /opt/ucursito/requirements.txt"
+    }
+else
+    echo "⚠️  Warning: requirements.txt not found"
+fi
+
+# Create symlink to make ucursito available system-wide
+echo "🔗 Creating symlink /usr/local/bin/ucursito..."
+ln -sf /opt/ucursito/ucursito /usr/local/bin/ucursito
+
+# Make sure the wrapper script is executable
+chmod +x /opt/ucursito/ucursito
+
+# Make sure main.py is executable
+chmod +x /opt/ucursito/src/main.py
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ Ucursito installed successfully!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "📍 Installation location: /opt/ucursito"
+echo "🔗 Command: ucursito (available from anywhere)"
+echo ""
+echo "🚀 Quick start:"
+echo "   1. Run: ucursito"
+echo "   2. Enter your U-Cursos credentials (first time only)"
+echo "   3. Your files will be downloaded to ./downloads/"
+echo ""
+echo "📖 Usage examples:"
+echo "   ucursito              # Sync all sections"
+echo "   ucursito -c           # Export calendar only"
+echo "   ucursito -m           # Download material docente only"
+echo "   ucursito -mt          # Download material + tareas"
+echo "   ucursito --serve-calendar  # Start calendar server"
+echo ""
+echo "📚 Documentation: /opt/ucursito/README.md"
+echo "🔑 Credentials: Stored in ~/.config/ucursito/credentials"
+echo ""
+echo "Need help? Run: ucursito --help"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+exit 0
