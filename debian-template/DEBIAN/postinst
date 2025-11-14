@@ -10,11 +10,16 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 # Install Python dependencies
 echo "📦 Installing Python dependencies..."
 if [ -f /opt/ucursito/requirements.txt ]; then
-    pip3 install -r /opt/ucursito/requirements.txt --quiet --disable-pip-version-check || {
-        echo "⚠️  Warning: Some dependencies may not have installed correctly"
-        echo "   You can manually install them with:"
-        echo "   sudo pip3 install -r /opt/ucursito/requirements.txt"
-    }
+    # Try to install dependencies (--break-system-packages for Ubuntu 23.04+)
+    if pip3 install -r /opt/ucursito/requirements.txt --break-system-packages --quiet --disable-pip-version-check 2>/dev/null; then
+        echo "✓ Dependencies installed successfully"
+    elif pip3 install -r /opt/ucursito/requirements.txt --quiet --disable-pip-version-check 2>/dev/null; then
+        echo "✓ Dependencies installed successfully"
+    else
+        echo "⚠️  Warning: Could not install dependencies automatically"
+        echo "   Please run manually:"
+        echo "   sudo pip3 install -r /opt/ucursito/requirements.txt --break-system-packages"
+    fi
 else
     echo "⚠️  Warning: requirements.txt not found"
 fi
