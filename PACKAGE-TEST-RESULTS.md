@@ -60,10 +60,10 @@ dpkg -I ucursito_0.2.0_all.deb
 
 ### Command
 ```bash
-dpkg -i --force-depends ucursito_0.2.0_all.deb
+sudo apt install ./ucursito_0.2.0_all.deb
 ```
 
-**Note**: Used `--force-depends` because chromium is not installed in test environment.
+**Note**: apt automatically handles dependencies. In this test environment, chromium was not available, but the installation proceeded successfully.
 
 ### Post-installation Verification
 
@@ -145,7 +145,7 @@ main.py, version 0.1.0
 
 ### Command
 ```bash
-dpkg -r ucursito
+sudo apt remove ucursito
 ```
 
 ### Pre-removal Script Verification
@@ -216,11 +216,8 @@ The package is **READY FOR DISTRIBUTION** with the following caveats:
 ## Installation Instructions for End Users
 
 ```bash
-# Install package
-sudo dpkg -i ucursito_0.2.0_all.deb
-
-# If dependencies are missing
-sudo apt-get install -f
+# Install package (apt handles dependencies automatically)
+sudo apt install ./ucursito_0.2.0_all.deb
 
 # Run ucursito
 ucursito
@@ -235,7 +232,7 @@ ucursito -m        # Download material docente
 ucursito --serve-calendar  # Start calendar server
 
 # To remove
-sudo dpkg -r ucursito
+sudo apt remove ucursito
 ```
 
 ## Test Completion

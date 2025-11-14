@@ -56,24 +56,19 @@ ucursos-scraper/
    wget https://github.com/iaaaanb/ucursos-scraper/releases/download/v0.2.0/ucursito_0.2.0_all.deb
    ```
 
-2. **Install the package**
+2. **Install the package** (apt handles dependencies automatically)
    ```bash
-   sudo dpkg -i ucursito_0.2.0_all.deb
+   sudo apt install ./ucursito_0.2.0_all.deb
    ```
 
-3. **Install missing dependencies** (if any)
+3. **Install browser dependencies** (if not already installed)
    ```bash
-   sudo apt-get install -f
-   ```
-
-4. **Install browser dependencies** (if not already installed)
-   ```bash
-   sudo apt-get install chromium-browser chromium-chromedriver
+   sudo apt install chromium-browser chromium-chromedriver
    # OR for Google Chrome:
-   # sudo apt-get install google-chrome-stable
+   # sudo apt install google-chrome-stable
    ```
 
-5. **Run ucursito**
+4. **Run ucursito**
    ```bash
    ucursito
    ```
@@ -97,10 +92,10 @@ ucursos-scraper/
 
 ```bash
 # Remove package
-sudo dpkg -r ucursito
+sudo apt remove ucursito
 
 # Remove package + configuration files
-sudo dpkg --purge ucursito
+sudo apt purge ucursito
 
 # Note: User credentials in ~/.config/ucursito/ are preserved
 # To remove them manually:
@@ -501,13 +496,13 @@ Before running on real data:
 4. **Test the package**
    ```bash
    # Install locally
-   sudo dpkg -i ucursito_0.2.0_all.deb
+   sudo apt install ./ucursito_0.2.0_all.deb
 
    # Test the command
    ucursito --help
 
    # Remove for cleanup
-   sudo dpkg -r ucursito
+   sudo apt remove ucursito
    ```
 
 #### Build Output
@@ -569,7 +564,7 @@ scp ucursito_0.2.0_all.deb user@server:/path/
 
 Users can then install with:
 ```bash
-sudo dpkg -i ucursito_0.2.0_all.deb
+sudo apt install ./ucursito_0.2.0_all.deb
 ```
 
 ## Security
