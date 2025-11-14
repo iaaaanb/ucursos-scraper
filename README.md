@@ -177,6 +177,21 @@ python src/main.py --no-headless
 python src/main.py -n --no-headless
 ```
 
+#### Calendar Server
+Serve the calendar via HTTP for live subscription in calendar apps:
+```bash
+# Start calendar server (default: localhost:8000)
+python src/main.py --serve-calendar
+
+# Custom port
+python src/main.py --serve-calendar --port 9000
+
+# Allow remote access (⚠️ security warning)
+python src/main.py --serve-calendar --host 0.0.0.0
+```
+
+Then subscribe in your calendar app using: `http://localhost:8000/calendar.ics`
+
 ### Help
 
 Get detailed help:
@@ -248,6 +263,53 @@ The generated `ucursos_calendar.ics` file can be imported into:
 - **Thunderbird**: Events → Import
 
 **Updating Events:** When you re-sync, the calendar file will update existing events (same UIDs), so you can simply re-import to update deadlines, submission status, or newly added late deadlines.
+
+### Calendar Server (Live Subscription)
+
+Instead of manually importing the calendar file, you can subscribe to it via HTTP. The calendar will automatically refresh when you re-run the scraper.
+
+#### Start the Calendar Server
+
+```bash
+python src/main.py --serve-calendar
+```
+
+This starts an HTTP server at `http://localhost:8000/calendar.ics`
+
+**Custom Port/Host:**
+```bash
+python src/main.py --serve-calendar --port 9000 --host 0.0.0.0
+```
+
+#### Subscribe in Calendar Apps
+
+**Thunderbird:**
+1. Right-click on calendar list → New Calendar
+2. Choose "On the Network"
+3. Enter URL: `http://localhost:8000/calendar.ics`
+4. Set a name: "U-Cursos"
+
+**Google Calendar:**
+1. Settings → Add calendar → From URL
+2. Enter: `http://localhost:8000/calendar.ics`
+3. Click "Add calendar"
+
+**Apple Calendar:**
+1. File → New Calendar Subscription
+2. Enter: `http://localhost:8000/calendar.ics`
+3. Set refresh interval (e.g., every hour)
+
+**Benefits:**
+- ✅ Automatic refresh - calendar updates when you re-run the scraper
+- ✅ No manual re-importing needed
+- ✅ Works across all calendar apps
+- ✅ Can subscribe from multiple devices
+
+**Notes:**
+- Keep the server running in a terminal window
+- Run `python src/main.py` to re-sync, calendar apps will auto-refresh
+- Use `Ctrl+C` to stop the server
+- For remote access, use `--host 0.0.0.0` (⚠️ be aware of security implications)
 
 ## Implemented Features
 

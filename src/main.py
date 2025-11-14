@@ -27,7 +27,10 @@ load_dotenv()
 @click.option('-m', '--material', 'sections', flag_value='material_docente', multiple=True, help='Scrape material docente section only')
 @click.option('-n', '--novedades', 'sections', flag_value='novedades', multiple=True, help='Scrape novedades section only')
 @click.option('-t', '--tareas', 'sections', flag_value='tareas', multiple=True, help='Scrape tareas section only')
-def cli(headless, output, course, sections):
+@click.option('--serve-calendar', is_flag=True, help='Start HTTP server to serve calendar file for subscription')
+@click.option('--port', default=8000, type=int, help='Port for calendar server (default: 8000)')
+@click.option('--host', default='localhost', help='Host for calendar server (default: localhost)')
+def cli(headless, output, course, sections, serve_calendar, port, host):
     """
     U-Cursos Scraper - Download files and export calendar events from U-Cursos.
 
@@ -50,7 +53,15 @@ def cli(headless, output, course, sections):
         python main.py -m           # Only material docente
         python main.py -mt          # Material docente + tareas
         python main.py -c --course "Programación"  # Only calendario for one course
+        python main.py --serve-calendar  # Serve calendar via HTTP for subscription
     """
+    # Handle calendar server mode
+    if serve_calendar:
+        from calendar_server import serve_calendar as start_server
+        calendar_path = Path(output) / 'calendar.ics'
+        start_server(calendar_path, port=port, host=host)
+        return  # Server runs until interrupted
+
     # Validate environment variables
     if not os.getenv('UCURSOS_USERNAME') or not os.getenv('UCURSOS_PASSWORD'):
         click.echo(click.style(
