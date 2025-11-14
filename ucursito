@@ -166,6 +166,14 @@ def main():
             print(f'   - {loc}')
         sys.exit(1)
 
+    # Determine which Python interpreter to use
+    # If installed via .deb, use the venv's Python
+    venv_python = Path('/opt/ucursito/venv/bin/python3')
+    if venv_python.exists():
+        python_executable = str(venv_python)
+    else:
+        python_executable = sys.executable
+
     # Set environment variables for the scraper
     env = os.environ.copy()
     env['UCURSOS_USERNAME'] = username
@@ -174,7 +182,7 @@ def main():
 
     # Pass all command-line arguments to the scraper
     # sys.argv[0] is 'ucursito', we want to pass argv[1:] to the scraper
-    cmd = [sys.executable, str(scraper_script)] + sys.argv[1:]
+    cmd = [python_executable, str(scraper_script)] + sys.argv[1:]
 
     try:
         # Run the scraper with the credentials
