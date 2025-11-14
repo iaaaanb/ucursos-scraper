@@ -777,6 +777,13 @@ def scrape_tareas(driver, course, output_dir=None):
     all_files = []
 
     try:
+        # Store the tareas list URL for reliable navigation back
+        tareas_list_url = driver.current_url
+
+        # FIRST PASS: Collect all tarea information (titles, URLs, categories)
+        # This avoids stale element references when navigating
+        tareas_to_process = []
+
         # Find the tareas table
         table = driver.find_element(By.CSS_SELECTOR, 'table')
 
@@ -784,7 +791,6 @@ def scrape_tareas(driver, course, output_dir=None):
         tbody_elements = table.find_elements(By.TAG_NAME, 'tbody')
 
         current_category = None
-        tarea_count = 0
 
         for tbody in tbody_elements:
             # Check if this tbody contains a separator row
@@ -801,7 +807,7 @@ def scrape_tareas(driver, course, output_dir=None):
                 current_category = category_name
                 continue
 
-            # This tbody contains tarea rows - extract files from each
+            # This tbody contains tarea rows - collect their info
             tarea_rows = tbody.find_elements(By.CSS_SELECTOR, 'tr')
 
             for row in tarea_rows:
@@ -811,93 +817,110 @@ def scrape_tareas(driver, course, output_dir=None):
                     tarea_title = title_elem.text.strip()
                     tarea_url = title_elem.get_attribute('href')
 
-                    # Navigate to the tarea's page
-                    driver.get(tarea_url)
-                    time.sleep(1)  # Wait for page to load
-
-                    # Look for the table with id="tarea"
-                    try:
-                        tarea_table = driver.find_element(By.CSS_SELECTOR, 'table#tarea')
-
-                        # Find the "Descripción" row
-                        desc_rows = tarea_table.find_elements(By.TAG_NAME, 'tr')
-
-                        for desc_row in desc_rows:
-                            try:
-                                th_elem = desc_row.find_element(By.TAG_NAME, 'th')
-                                if 'Descripción' in th_elem.text or 'Descripcion' in th_elem.text:
-                                    # This is the description row - extract all file links
-                                    td_elem = desc_row.find_element(By.TAG_NAME, 'td')
-                                    file_links = td_elem.find_elements(By.CSS_SELECTOR, 'a.file[data-name]')
-
-                                    for file_link in file_links:
-                                        try:
-                                            # Extract file information
-                                            filename = file_link.get_attribute('data-name')
-                                            file_url = file_link.get_attribute('href')
-
-                                            # Check if it's a lightbox link
-                                            is_lightbox = 'lightbox' in file_link.get_attribute('class')
-
-                                            # Skip external links
-                                            if file_url.startswith('http://') or file_url.startswith('https://'):
-                                                print(f'      ⏭️  Skipping external link: {filename}')
-                                                continue
-
-                                            # Extract file size from link text (e.g., "EP5.txt (4.1 kb)")
-                                            link_text = file_link.text.strip()
-                                            file_size = "unknown size"
-                                            if '(' in link_text and ')' in link_text:
-                                                file_size = link_text[link_text.find('(')+1:link_text.find(')')]
-
-                                            # Use current category or "Tareas" as default
-                                            category = current_category if current_category else "Tareas"
-
-                                            # Add file to list with subfolder (tarea name)
-                                            all_files.append({
-                                                'name': filename,
-                                                'url': file_url,
-                                                'category': category,
-                                                'subfolder': tarea_title.replace(' ', '-'),  # Sanitize will happen later
-                                                'size': file_size,
-                                                'is_lightbox': is_lightbox
-                                            })
-
-                                            print(f'      📎 Found file: {filename} in "{tarea_title}"')
-
-                                        except Exception as e:
-                                            print(f'      ⚠️  Error extracting file link: {e}')
-                                            continue
-
-                                    break  # Found descripción row, no need to check other rows
-                            except NoSuchElementException:
-                                # This row doesn't have a th element, skip it
-                                continue
-
-                    except NoSuchElementException:
-                        # No tarea table found on this page (maybe no files)
-                        pass
-
-                    # Navigate back to the tareas list page
-                    driver.back()
-                    time.sleep(1)  # Wait for page to load
-
-                    tarea_count += 1
+                    # Store tarea info for processing
+                    tareas_to_process.append({
+                        'title': tarea_title,
+                        'url': tarea_url,
+                        'category': current_category if current_category else "Tareas"
+                    })
 
                 except NoSuchElementException:
                     # Skip rows that don't have the expected structure
                     continue
-                except Exception as e:
-                    print(f'      ⚠️  Error processing tarea: {e}')
-                    # Try to navigate back if we're on a tarea page
-                    try:
-                        driver.back()
-                        time.sleep(1)
-                    except:
-                        pass
-                    continue
 
-        print(f'   ✅ Processed {tarea_count} tarea(s), found {len(all_files)} file(s)')
+        print(f'   📋 Found {len(tareas_to_process)} tarea(s) to process')
+
+        # SECOND PASS: Navigate to each tarea and extract files
+        for idx, tarea_info in enumerate(tareas_to_process):
+            try:
+                print(f'      [{idx + 1}/{len(tareas_to_process)}] Processing: {tarea_info["title"]}')
+
+                # Navigate to the tarea's page
+                driver.get(tarea_info['url'])
+                time.sleep(1.5)  # Increased wait time for stability
+
+                # Look for the table with id="tarea"
+                try:
+                    tarea_table = driver.find_element(By.CSS_SELECTOR, 'table#tarea')
+
+                    # Find the "Descripción" row
+                    desc_rows = tarea_table.find_elements(By.TAG_NAME, 'tr')
+
+                    for desc_row in desc_rows:
+                        try:
+                            th_elem = desc_row.find_element(By.TAG_NAME, 'th')
+                            if 'Descripción' in th_elem.text or 'Descripcion' in th_elem.text:
+                                # This is the description row - extract all file links
+                                td_elem = desc_row.find_element(By.TAG_NAME, 'td')
+                                file_links = td_elem.find_elements(By.CSS_SELECTOR, 'a.file[data-name]')
+
+                                if not file_links:
+                                    print(f'         No files found')
+                                    break
+
+                                for file_link in file_links:
+                                    try:
+                                        # Extract file information
+                                        filename = file_link.get_attribute('data-name')
+                                        file_url = file_link.get_attribute('href')
+
+                                        # Check if it's a lightbox link
+                                        is_lightbox = 'lightbox' in file_link.get_attribute('class')
+
+                                        # Skip external links
+                                        if file_url.startswith('http://') or file_url.startswith('https://'):
+                                            print(f'         ⏭️  Skipping external link: {filename}')
+                                            continue
+
+                                        # Extract file size from link text (e.g., "EP5.txt (4.1 kb)")
+                                        link_text = file_link.text.strip()
+                                        file_size = "unknown size"
+                                        if '(' in link_text and ')' in link_text:
+                                            file_size = link_text[link_text.find('(')+1:link_text.find(')')]
+
+                                        # Add file to list with subfolder (tarea name)
+                                        all_files.append({
+                                            'name': filename,
+                                            'url': file_url,
+                                            'category': tarea_info['category'],
+                                            'subfolder': tarea_info['title'].replace(' ', '-'),  # Sanitize will happen later
+                                            'size': file_size,
+                                            'is_lightbox': is_lightbox
+                                        })
+
+                                        print(f'         📎 Found file: {filename} ({file_size})')
+
+                                    except Exception as e:
+                                        print(f'         ⚠️  Error extracting file link: {e}')
+                                        continue
+
+                                break  # Found descripción row, no need to check other rows
+                        except NoSuchElementException:
+                            # This row doesn't have a th element, skip it
+                            continue
+
+                except NoSuchElementException:
+                    # No tarea table found on this page (maybe no files)
+                    print(f'         No description table found')
+                    pass
+
+                # Navigate back to the tareas list page using the stored URL
+                driver.get(tareas_list_url)
+                time.sleep(1.5)  # Increased wait time for stability
+
+            except Exception as e:
+                print(f'         ⚠️  Error processing tarea: {e}')
+                # Try to navigate back to the list page
+                try:
+                    driver.get(tareas_list_url)
+                    time.sleep(1.5)
+                except Exception as nav_error:
+                    print(f'         ❌ Failed to navigate back to list: {nav_error}')
+                    # If we can't navigate back, we're in trouble - break out
+                    break
+                continue
+
+        print(f'   ✅ Processed {len(tareas_to_process)} tarea(s), found {len(all_files)} file(s)')
         return all_files
 
     except NoSuchElementException:
